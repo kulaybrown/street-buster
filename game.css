@@ -674,42 +674,67 @@ h2 {
 
 .stage-preview-car-body {
   position: absolute;
-  left: 22px;
-  right: 22px;
-  bottom: 52px;
-  height: 50px;
-  border-radius: 16px 24px 16px 16px;
-  background: linear-gradient(180deg, #b2452d, #671c11);
-  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.22);
+  left: 24px;
+  right: 24px;
+  bottom: 34px;
+  height: 62px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #be5236 0%, #8a2f1d 62%, #6a2417 100%);
+  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.24);
 }
 
 .stage-preview-car-roof {
   position: absolute;
-  left: 56px;
-  right: 68px;
-  bottom: 92px;
-  height: 42px;
-  border-radius: 20px 28px 8px 8px;
-  background: linear-gradient(180deg, #d35e3f, #7c2415);
+  left: 52px;
+  right: 52px;
+  bottom: 86px;
+  height: 40px;
+  border-radius: 14px 14px 10px 10px;
+  background: linear-gradient(180deg, #e38768, #8d311f);
+}
+
+.stage-preview-car-body::before {
+  content: "";
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: 6px;
+  height: 18px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f4b26d, #cb6a3c);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.stage-preview-car-body::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 10px;
+  height: 18px;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 0 27%, rgba(0, 0, 0, 0.35) 27% 29%, transparent 29% 71%, rgba(0, 0, 0, 0.35) 71% 73%, transparent 73% 100%),
+    linear-gradient(180deg, #7a3130, #4c1e1f);
 }
 
 .stage-preview-car-wheel,
 .target-car-wheel {
   position: absolute;
-  bottom: 26px;
-  width: 38px;
-  height: 38px;
+  bottom: 20px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: #171717;
-  border: 5px solid #555;
+  border: 4px solid #555;
 }
 
 .stage-preview-car-wheel.left {
-  left: 46px;
+  left: 34px;
 }
 
 .stage-preview-car-wheel.right {
-  right: 46px;
+  right: 34px;
 }
 
 .stage-preview-box .crate-preview {
@@ -832,7 +857,7 @@ h2 {
 
 .fighter-wrap {
   position: absolute;
-  left: 6%;
+  left: 0;
   bottom: 8%;
   width: var(--fighter-width);
   aspect-ratio: 1 / 1;
@@ -868,12 +893,13 @@ h2 {
 
 .target-wrap {
   position: absolute;
-  right: 5%;
+  left: 50%;
   bottom: 8%;
   width: min(320px, 40vw);
   height: min(320px, 40vw);
   display: grid;
   place-items: end center;
+  transform: translateX(-50%);
   transition: transform 120ms ease, opacity 160ms ease;
 }
 
@@ -899,46 +925,103 @@ h2 {
 .stage-car {
   width: 92%;
   height: 68%;
-  background: linear-gradient(180deg, #c75439, #6a1c10);
-  border-radius: 24px 34px 14px 14px;
-  border: 5px solid #2b130d;
-  box-shadow: inset 0 -12px 0 rgba(0, 0, 0, 0.22);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .stage-car::before {
   content: "";
   position: absolute;
-  left: 16%;
-  right: 16%;
-  top: 16%;
-  height: 36%;
-  border-radius: 24px 32px 10px 10px;
-  background: linear-gradient(180deg, #e07e64, #a54026);
-  border: 4px solid rgba(255, 236, 208, 0.16);
+  left: 15%;
+  right: 15%;
+  bottom: 9%;
+  height: 22%;
+  border-radius: 14px;
+  border: 3px solid rgba(77, 29, 18, 0.55);
+  background:
+    linear-gradient(90deg, transparent 0 27%, rgba(0, 0, 0, 0.2) 27% 29%, transparent 29% 71%, rgba(0, 0, 0, 0.2) 71% 73%, transparent 73% 100%),
+    linear-gradient(180deg, #f2b16f, #ba5e34);
 }
 
 .stage-car::after {
   content: "";
   position: absolute;
-  left: 22%;
-  right: 22%;
-  top: 26%;
-  height: 16%;
-  border-radius: 20px;
-  background: rgba(42, 11, 9, 0.75);
+  left: 27%;
+  right: 27%;
+  top: 18%;
+  height: 14%;
+  border-radius: 10px;
+  border: 3px solid rgba(56, 21, 16, 0.5);
+  background: linear-gradient(180deg, rgba(205, 236, 255, 0.75), rgba(117, 142, 179, 0.45));
+}
+
+.target-car-part {
+  position: absolute;
+  border: 3px solid rgba(34, 11, 8, 0.65);
+  transition: opacity 140ms ease, filter 140ms ease, transform 140ms ease;
+}
+
+.target-car-slot {
+  position: absolute;
+}
+
+.target-car-slot-left,
+.target-car-slot-right {
+  top: 35%;
+  bottom: 16%;
+  width: 30%;
+}
+
+.target-car-slot-left {
+  left: 7%;
+  --car-slot-art: var(--car-left-art, linear-gradient(180deg, #c65138, #6a1d12));
+  --car-slot-border: var(--car-left-border, rgba(34, 11, 8, 0.65));
+}
+
+.target-car-slot-right {
+  right: 7%;
+  --car-slot-art: var(--car-right-art, linear-gradient(180deg, #c65138, #6a1d12));
+  --car-slot-border: var(--car-right-border, rgba(34, 11, 8, 0.65));
+}
+
+.target-car-slot-roof {
+  left: 15%;
+  right: 15%;
+  top: 6%;
+  height: 30%;
+  --car-slot-art: var(--car-roof-art, linear-gradient(180deg, #df7b62, #a13d28));
+  --car-slot-border: var(--car-roof-border, rgba(46, 14, 10, 0.7));
+}
+
+.target-car-box {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  background: var(--car-slot-art, linear-gradient(180deg, #c65138, #6a1d12));
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-color: var(--car-slot-border, rgba(34, 11, 8, 0.65));
+  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.2);
+}
+
+.target-car-box.roof-box {
+  border-radius: 14px 14px 10px 10px;
 }
 
 .stage-car .target-car-wheel.left {
-  left: 12%;
+  left: 14%;
 }
 
 .stage-car .target-car-wheel.right {
-  right: 12%;
+  right: 14%;
 }
 
 .stage-car .target-car-wheel.left,
 .stage-car .target-car-wheel.right {
-  bottom: -3px;
+  bottom: 1%;
 }
 
 .stage-car.damage-1 {
@@ -951,6 +1034,25 @@ h2 {
 
 .stage-car.damage-3 {
   filter: saturate(0.75) brightness(0.82);
+}
+
+.stage-car.part-left-damaged .target-car-box.left-box,
+.stage-car.left-door-damaged .target-car-box.left-box,
+.stage-car.part-right-damaged .target-car-box.right-box,
+.stage-car.right-door-damaged .target-car-box.right-box,
+.stage-car.part-roof-damaged .target-car-box.roof-box,
+.stage-car.roof-damaged .target-car-box.roof-box {
+  filter: saturate(0.72) brightness(0.84);
+}
+
+.stage-car.part-left-broken .target-car-box.left-box,
+.stage-car.left-door-broken .target-car-box.left-box,
+.stage-car.part-right-broken .target-car-box.right-box,
+.stage-car.right-door-broken .target-car-box.right-box,
+.stage-car.part-roof-broken .target-car-box.roof-box,
+.stage-car.roof-broken .target-car-box.roof-box {
+  opacity: 0.12;
+  transform: translateY(20px) rotate(8deg);
 }
 
 .stage-car.broken,
@@ -1081,6 +1183,13 @@ h2 {
   display: grid;
   place-items: center;
   background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.22), rgba(15, 18, 30, 0.9));
+}
+
+.dpad-gap {
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  pointer-events: none;
 }
 
 .joystick-core {
@@ -1285,12 +1394,11 @@ h2 {
   }
 
   .fighter-wrap {
-    left: 4%;
     width: min(180px, 38vw);
   }
 
   .target-wrap {
-    right: 2%;
+    left: 50%;
     width: min(220px, 42vw);
     height: min(220px, 42vw);
   }

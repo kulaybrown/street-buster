@@ -52,6 +52,17 @@ const damageMap = {
   crouchKick: 2,
 };
 
+const CAR_PARTS = {
+  leftDoor: { label: "Left Door", maxHealth: 8 },
+  rightDoor: { label: "Right Door", maxHealth: 8 },
+  roof: { label: "Roof", maxHealth: 8 },
+};
+
+const CHARACTER_TARGET_SCALE = {
+  default: 1,
+  "female-hulk": 1.08,
+};
+
 export default function App() {
   const rootRef = useRef(null);
 
@@ -81,9 +92,19 @@ export default function App() {
       gameTimer: null,
       frameId: null,
       jumpStart: 0,
-      jumpDuration: 1500,
+      jumpDuration: 860,
       moveOffsetX: 0,
-      jumpDriftX: 0,
+      jumpStartOffsetX: 0,
+      jumpTargetOffsetX: 0,
+      jumpFromRoof: false,
+      jumpLandOnRoof: false,
+      jumpAllowsAirSteer: false,
+      onRoof: false,
+      keyWalkAxis: 0,
+      buttonWalkAxis: 0,
+      walkVelocity: 0,
+      lastFrameTime: 0,
+      carPartHealth: null,
     };
 
     const listeners = [];
@@ -112,6 +133,7 @@ export default function App() {
       resultPlayAgain: q("#result-play-again"),
       fighterSprite: q("#fighter-sprite"),
       fighterWrap: q("#fighter-wrap"),
+      arena: q("#arena"),
       targetWrap: q("#target-wrap"),
       targetObject: q("#target-object"),
       targetHealthLabel: q("#target-health-label"),
@@ -233,10 +255,344 @@ export default function App() {
       }
       elements.targetObject.className = `target ${STAGES[state.stage].stageClass}`;
       if (state.stage === "car") {
-        elements.targetObject.innerHTML = '<div class="target-car-wheel left"></div><div class="target-car-wheel right"></div>';
+        elements.targetObject.innerHTML =
+          '<div class="target-car-slot target-car-slot-left"><div class="target-car-part target-car-box left-box"></div></div>' +
+          '<div class="target-car-slot target-car-slot-right"><div class="target-car-part target-car-box right-box"></div></div>' +
+          '<div class="target-car-slot target-car-slot-roof"><div class="target-car-part target-car-box roof-box"></div></div>';
       } else {
         elements.targetObject.innerHTML = '<div class="crate-face"></div>';
       }
+    }
+
+    function getArenaMetrics() {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const fighterRect = elements.fighterWrap?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      const arenaWidth = arenaRect?.width || 900;
+      const fighterWidth = fighterRect?.width || (window.innerWidth <= 560 ? 150 : 210);
+      const baseLeft = 0;
+      const minOffset = 8;
+      const maxOffset = arenaWidth - fighterWidth - 8;
+      const carCenterX = arenaWidth * 0.5;
+      const carHalfWidth = targetRect ? targetRect.width * 0.44 : Math.min(180, arenaWidth * 0.17);
+
+      return {
+        arenaWidth,
+        fighterWidth,
+        baseLeft,
+        minOffset,
+        maxOffset,
+        carCenterX,
+        carHalfWidth,
+      };
+    }
+
+    function getRoofHeight() {
+      return window.innerWidth <= 560 ? 74 : 98;
+    }
+
+    function getWalkAxis() {
+      if (state.buttonWalkAxis !== 0) {
+        return state.buttonWalkAxis;
+      }
+      return state.keyWalkAxis;
+    }
+
+    function getRoofOffsetBounds() {
+      const metrics = getArenaMetrics();
+      const centerOffset = metrics.carCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
+      const roofHalfSpan = Math.max(72, metrics.carHalfWidth - metrics.fighterWidth * 0.12);
+      const minOffset = Math.max(metrics.minOffset, centerOffset - roofHalfSpan);
+      const maxOffset = Math.min(metrics.maxOffset, centerOffset + roofHalfSpan);
+      return {
+        minOffset,
+        maxOffset,
+      };
+    }
+
+    function clampRoofOffset(nextOffset) {
+      const { minOffset, maxOffset } = getRoofOffsetBounds();
+      return Math.max(minOffset, Math.min(maxOffset, nextOffset));
+    }
+
+    function resolveRoofOrGroundWalkOffset(nextOffset) {
+      if (!state.onRoof || state.stage !== "car") {
+        return clampGroundOffset(nextOffset, state.moveOffsetX);
+      }
+
+      const { minOffset, maxOffset } = getRoofOffsetBounds();
+      if (nextOffset < minOffset || nextOffset > maxOffset) {
+        state.onRoof = false;
+        state.jumpFromRoof = false;
+        state.jumpLandOnRoof = false;
+        return clampGroundOffset(nextOffset, state.moveOffsetX);
+      }
+
+      return clampRoofOffset(nextOffset);
+    }
+
+    function getCarBlockBounds(metrics) {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      const fighterHalf = metrics.fighterWidth * 0.5;
+
+      if (!arenaRect || !targetRect) {
+        const fallbackHalf = Math.max(56, metrics.carHalfWidth + metrics.fighterWidth * 0.08);
+        return {
+          left: metrics.carCenterX - fallbackHalf,
+          right: metrics.carCenterX + fallbackHalf,
+        };
+      }
+
+      const targetLeft = targetRect.left - arenaRect.left;
+      const targetRight = targetLeft + targetRect.width;
+      const inset = targetRect.width * 0.12;
+
+      return {
+        left: targetLeft + inset - fighterHalf * 0.56,
+        right: targetRight - inset + fighterHalf * 0.56,
+      };
+    }
+
+    function getDistanceToCarBlockEdge(centerX, metrics) {
+      const block = getCarBlockBounds(metrics);
+      if (centerX < block.left) {
+        return block.left - centerX;
+      }
+      if (centerX > block.right) {
+        return centerX - block.right;
+      }
+      return 0;
+    }
+
+    function clampGroundOffset(nextOffset, previousOffset = state.moveOffsetX) {
+      const metrics = getArenaMetrics();
+      let offset = Math.max(metrics.minOffset, Math.min(metrics.maxOffset, nextOffset));
+
+      if (state.stage !== "car" || state.airborne) {
+        return offset;
+      }
+
+      const centerX = metrics.baseLeft + offset + metrics.fighterWidth * 0.5;
+      const prevCenterX = metrics.baseLeft + previousOffset + metrics.fighterWidth * 0.5;
+      const block = getCarBlockBounds(metrics);
+
+      if (centerX > block.left && centerX < block.right) {
+        let snappedCenterX;
+        if (prevCenterX <= block.left) {
+          snappedCenterX = block.left;
+        } else if (prevCenterX >= block.right) {
+          snappedCenterX = block.right;
+        } else {
+          snappedCenterX = centerX < metrics.carCenterX ? block.left : block.right;
+        }
+        offset = snappedCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
+      }
+
+      return Math.max(metrics.minOffset, Math.min(metrics.maxOffset, offset));
+    }
+
+    function syncTargetScaleWithCharacter() {
+      if (!elements.targetWrap) {
+        return;
+      }
+
+      if (state.stage !== "car") {
+        elements.targetWrap.style.width = "";
+        elements.targetWrap.style.height = "";
+        return;
+      }
+
+      const metrics = getArenaMetrics();
+      const characterScale = CHARACTER_TARGET_SCALE[state.character] ?? 1;
+      const targetSize = Math.round(
+        Math.max(210, Math.min(metrics.arenaWidth * 0.44, metrics.fighterWidth * 1.52 * characterScale)),
+      );
+
+      elements.targetWrap.style.width = `${targetSize}px`;
+      elements.targetWrap.style.height = `${targetSize}px`;
+    }
+
+    function getCurrentFighterCenterX(offset = state.moveOffsetX) {
+      const metrics = getArenaMetrics();
+      return metrics.baseLeft + offset + metrics.fighterWidth * 0.5;
+    }
+
+    function resolveJumpTargetOffset(action) {
+      const metrics = getArenaMetrics();
+      const directionalStep = action === "jumpLeft" ? -120 : action === "jumpRight" ? 120 : 0;
+      let desiredOffset = clampGroundOffset(state.moveOffsetX + directionalStep);
+
+      if (state.stage !== "car") {
+        return desiredOffset;
+      }
+
+      const fighterCenterX = getCurrentFighterCenterX();
+      const side = fighterCenterX < metrics.carCenterX ? -1 : 1;
+      const nearCar = getDistanceToCarBlockEdge(fighterCenterX, metrics) <= 112;
+      const tryingToCross =
+        (side < 0 && action === "jumpRight") ||
+        (side > 0 && action === "jumpLeft");
+
+      if (!nearCar || !tryingToCross) {
+        return desiredOffset;
+      }
+
+      const clearance = metrics.carHalfWidth + metrics.fighterWidth * 0.24 + 16;
+      const landingCenterX = metrics.carCenterX + (side < 0 ? clearance : -clearance);
+      desiredOffset = landingCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
+      return clampGroundOffset(desiredOffset);
+    }
+
+    function resolveJumpLanding(action) {
+      if (state.stage !== "car") {
+        return {
+          offset: clampGroundOffset(resolveJumpTargetOffset(action)),
+          onRoof: false,
+        };
+      }
+
+      const metrics = getArenaMetrics();
+
+      if (state.onRoof) {
+        if (action === "jumpLeft" || action === "jumpRight") {
+          const jumpSide = action === "jumpLeft" ? -1 : 1;
+          const clearance = metrics.carHalfWidth + metrics.fighterWidth * 0.24 + 16;
+          const landingCenterX = metrics.carCenterX + jumpSide * clearance;
+          const desiredOffset = landingCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
+          return {
+            offset: clampGroundOffset(desiredOffset),
+            onRoof: false,
+          };
+        }
+        return {
+          offset: clampRoofOffset(state.moveOffsetX),
+          onRoof: true,
+        };
+      }
+
+      const fighterCenterX = getCurrentFighterCenterX();
+      const nearCar = getDistanceToCarBlockEdge(fighterCenterX, metrics) <= 94;
+      const walkAxis = getWalkAxis();
+      const towardCar = fighterCenterX <= metrics.carCenterX ? walkAxis > 0 : walkAxis < 0;
+
+      if (nearCar && action === "jump" && towardCar) {
+        const roofCenterOffset = metrics.carCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
+        return {
+          offset: clampRoofOffset(roofCenterOffset),
+          onRoof: true,
+        };
+      }
+
+      return {
+        offset: clampGroundOffset(resolveJumpTargetOffset(action)),
+        onRoof: false,
+      };
+    }
+
+    function resolveRoofJumpIntent() {
+      const walkAxis = getWalkAxis();
+      if (walkAxis < 0) {
+        return "jumpLeft";
+      }
+      if (walkAxis > 0) {
+        return "jumpRight";
+      }
+
+      return "jump";
+    }
+
+    function getAttackPoint() {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const fighterRect = elements.fighterWrap?.getBoundingClientRect();
+      if (!arenaRect || !fighterRect) {
+        return null;
+      }
+      return {
+        x: fighterRect.left - arenaRect.left + fighterRect.width * 0.54,
+        y:
+          fighterRect.top -
+          arenaRect.top +
+          fighterRect.height * (state.airborne ? 0.35 : state.crouching ? 0.78 : 0.62),
+      };
+    }
+
+    function canReachTarget(mappedAction) {
+      const attackPoint = getAttackPoint();
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      if (!attackPoint || !arenaRect || !targetRect) {
+        return false;
+      }
+
+      const targetCenter = {
+        x: targetRect.left - arenaRect.left + targetRect.width * 0.5,
+        y: targetRect.top - arenaRect.top + targetRect.height * 0.64,
+      };
+      const dx = attackPoint.x - targetCenter.x;
+      const dy = attackPoint.y - targetCenter.y;
+      const reach = mappedAction.includes("Kick") ? 168 : 136;
+      return Math.hypot(dx, dy * 1.2) <= reach;
+    }
+
+    function resolveCarPartHit(mappedAction) {
+      const attackPoint = getAttackPoint();
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      if (!attackPoint || !arenaRect || !targetRect || !state.carPartHealth) {
+        return null;
+      }
+
+      const baseReach = mappedAction.includes("Kick") ? 160 : 136;
+
+      const partCenters = {
+        leftDoor: {
+          x: targetRect.left - arenaRect.left + targetRect.width * 0.34,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.63,
+        },
+        rightDoor: {
+          x: targetRect.left - arenaRect.left + targetRect.width * 0.66,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.63,
+        },
+        roof: {
+          x: targetRect.left - arenaRect.left + targetRect.width * 0.5,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.31,
+        },
+      };
+
+      const allowRoof = state.onRoof || state.airborne || mappedAction.startsWith("jump");
+
+      if (state.onRoof) {
+        if (mappedAction !== "crouchKick" || state.carPartHealth.roof <= 0) {
+          return null;
+        }
+        const dx = attackPoint.x - partCenters.roof.x;
+        const dy = attackPoint.y - partCenters.roof.y;
+        const roofReach = baseReach + 24;
+        return Math.hypot(dx, dy * 1.2) <= roofReach ? "roof" : null;
+      }
+
+      let nearestPart = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      Object.entries(partCenters).forEach(([partKey, center]) => {
+        if (state.carPartHealth[partKey] <= 0) {
+          return;
+        }
+        if (partKey === "roof" && !allowRoof) {
+          return;
+        }
+        const reach = partKey === "roof" ? baseReach : baseReach + 28;
+        const dx = attackPoint.x - center.x;
+        const dy = attackPoint.y - center.y;
+        const distance = Math.hypot(dx, dy * 1.25);
+        if (distance < nearestDistance && distance <= reach) {
+          nearestDistance = distance;
+          nearestPart = partKey;
+        }
+      });
+
+      return nearestPart;
     }
 
     function updateTargetVisual() {
@@ -254,10 +610,24 @@ export default function App() {
           elements.targetObject.classList.toggle("damage-1", ratio <= 0.85);
           elements.targetObject.classList.toggle("damage-2", ratio <= 0.55);
           elements.targetObject.classList.toggle("damage-3", ratio <= 0.25);
+          const leftDoorHealth = state.carPartHealth?.leftDoor ?? CAR_PARTS.leftDoor.maxHealth;
+          const rightDoorHealth = state.carPartHealth?.rightDoor ?? CAR_PARTS.rightDoor.maxHealth;
+          const roofHealth = state.carPartHealth?.roof ?? CAR_PARTS.roof.maxHealth;
+          elements.targetObject.classList.toggle("left-door-damaged", leftDoorHealth <= CAR_PARTS.leftDoor.maxHealth * 0.5);
+          elements.targetObject.classList.toggle("right-door-damaged", rightDoorHealth <= CAR_PARTS.rightDoor.maxHealth * 0.5);
+          elements.targetObject.classList.toggle("roof-damaged", roofHealth <= CAR_PARTS.roof.maxHealth * 0.5);
+          elements.targetObject.classList.toggle("left-door-broken", leftDoorHealth <= 0);
+          elements.targetObject.classList.toggle("right-door-broken", rightDoorHealth <= 0);
+          elements.targetObject.classList.toggle("roof-broken", roofHealth <= 0);
         }
       }
       if (elements.stageBonusLabel) {
-        elements.stageBonusLabel.textContent = state.targetBroken ? "Broken" : ratio < 0.35 ? "Cracking" : "Ready";
+        if (state.stage === "car" && state.carPartHealth) {
+          const brokenCount = Object.values(state.carPartHealth).filter((value) => value <= 0).length;
+          elements.stageBonusLabel.textContent = state.targetBroken ? "Broken" : `${brokenCount}/3 Parts Down`;
+        } else {
+          elements.stageBonusLabel.textContent = state.targetBroken ? "Broken" : ratio < 0.35 ? "Cracking" : "Ready";
+        }
       }
       if (elements.comboLabel) {
         elements.comboLabel.textContent = `${state.combo}x`;
@@ -297,10 +667,10 @@ export default function App() {
       if (elements.targetWrap) {
         elements.targetWrap.animate(
           [
-            { transform: "translateX(0)" },
-            { transform: "translateX(-10px)" },
-            { transform: "translateX(8px)" },
-            { transform: "translateX(0)" },
+            { transform: "translateX(-50%)" },
+            { transform: "translateX(calc(-50% - 10px))" },
+            { transform: "translateX(calc(-50% + 8px))" },
+            { transform: "translateX(-50%)" },
           ],
           { duration: 240, easing: "ease-out" },
         );
@@ -342,11 +712,29 @@ export default function App() {
       }
     }
 
-    function applyDamage(amount) {
+    function applyDamage(amount, mappedAction) {
       if (state.targetBroken || amount <= 0) {
         return;
       }
-      state.targetHealth = Math.max(0, state.targetHealth - amount);
+
+      if (state.stage === "car") {
+        const hitPart = resolveCarPartHit(mappedAction);
+        if (!hitPart || !state.carPartHealth) {
+          state.combo = 0;
+          updateTargetVisual();
+          return;
+        }
+        state.carPartHealth[hitPart] = Math.max(0, state.carPartHealth[hitPart] - amount);
+        state.targetHealth = Object.values(state.carPartHealth).reduce((sum, health) => sum + health, 0);
+      } else {
+        if (!canReachTarget(mappedAction)) {
+          state.combo = 0;
+          updateTargetVisual();
+          return;
+        }
+        state.targetHealth = Math.max(0, state.targetHealth - amount);
+      }
+
       state.score += amount * 100;
       if (state.score > state.highScore) {
         state.highScore = state.score;
@@ -374,26 +762,76 @@ export default function App() {
     }
 
     function updateFighterPosition(now) {
-      const height = window.innerWidth <= 560 ? 86 : 118;
+      const deltaMs = state.lastFrameTime ? Math.min(40, now - state.lastFrameTime) : 16;
+      state.lastFrameTime = now;
+
+      if (state.running && !state.airborne) {
+        const walkAxis = getWalkAxis();
+        const targetVelocity = walkAxis * (state.crouching ? 0.24 : 0.45);
+        const blend = walkAxis !== 0 ? 0.28 : 0.22;
+        state.walkVelocity += (targetVelocity - state.walkVelocity) * blend;
+        if (Math.abs(state.walkVelocity) < 0.01) {
+          state.walkVelocity = 0;
+        }
+        const movedOffset = state.moveOffsetX + state.walkVelocity * deltaMs;
+        state.moveOffsetX = resolveRoofOrGroundWalkOffset(movedOffset);
+      }
+
+      const jumpHeight = window.innerWidth <= 560 ? 78 : 112;
+      const roofHeight = getRoofHeight();
       let yOffset = 0;
       let xOffset = state.moveOffsetX;
 
+      if (state.running && state.airborne && state.jumpAllowsAirSteer) {
+        const walkAxis = getWalkAxis();
+        if (walkAxis !== 0) {
+          const airSteerStep = walkAxis * 0.14 * deltaMs;
+          const nextTarget = state.jumpTargetOffsetX + airSteerStep;
+          state.jumpTargetOffsetX = state.jumpLandOnRoof
+            ? clampRoofOffset(nextTarget)
+            : clampGroundOffset(nextTarget, state.jumpTargetOffsetX);
+        }
+      }
+
+      const fighterCenterX = getCurrentFighterCenterX(xOffset);
+      const targetCenterX = getArenaMetrics().carCenterX;
+      const facingScaleX = fighterCenterX <= targetCenterX ? 1 : -1;
+      const poseScale = state.crouching ? 0.98 : 1;
+
       if (state.airborne) {
         const progress = Math.min(1, (now - state.jumpStart) / state.jumpDuration);
-        yOffset = -Math.sin(progress * Math.PI) * height;
-        xOffset += state.jumpDriftX * Math.sin(progress * Math.PI);
+        const travel = state.jumpTargetOffsetX - state.jumpStartOffsetX;
+        xOffset = state.jumpStartOffsetX + travel * Math.sin((progress * Math.PI) / 2);
+
+        // Gravity-like arc: shorter rise and faster fall for a more natural jump feel.
+        const ascentRatio = 0.36;
+        let arcY = 0;
+        if (progress <= ascentRatio) {
+          const ascentProgress = progress / ascentRatio;
+          arcY = jumpHeight * (2 * ascentProgress - ascentProgress * ascentProgress);
+        } else {
+          const fallProgress = (progress - ascentRatio) / (1 - ascentRatio);
+          arcY = jumpHeight * (1 - fallProgress * fallProgress);
+        }
+
+        const startLift = state.jumpFromRoof ? roofHeight : 0;
+        const endLift = state.jumpLandOnRoof ? roofHeight : 0;
+        const lift = startLift + (endLift - startLift) * progress;
+        yOffset = -lift - arcY;
+      } else if (state.onRoof) {
+        yOffset = -roofHeight;
       } else if (state.crouching) {
         yOffset = 18;
       }
 
       if (state.action === "punch" || state.action === "jumpPunch" || state.action === "crouchPunch") {
-        xOffset = 4;
+        xOffset += 4;
       } else if (state.action === "kick" || state.action === "jumpKick" || state.action === "crouchKick") {
-        xOffset = 8;
+        xOffset += 8;
       }
 
       if (elements.fighterWrap) {
-        elements.fighterWrap.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0) scale(${state.crouching ? 0.98 : 1})`;
+        elements.fighterWrap.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0) scaleX(${facingScaleX * poseScale}) scaleY(${poseScale})`;
       }
       state.frameId = window.requestAnimationFrame(updateFighterPosition);
     }
@@ -408,21 +846,43 @@ export default function App() {
       state.airborne = false;
       state.action = "idle";
       state.targetBroken = false;
-      state.targetMaxHealth = STAGES[state.stage].maxHealth;
+      if (state.stage === "car") {
+        state.carPartHealth = {
+          leftDoor: CAR_PARTS.leftDoor.maxHealth,
+          rightDoor: CAR_PARTS.rightDoor.maxHealth,
+          roof: CAR_PARTS.roof.maxHealth,
+        };
+        state.targetMaxHealth = Object.values(state.carPartHealth).reduce((sum, value) => sum + value, 0);
+      } else {
+        state.carPartHealth = null;
+        state.targetMaxHealth = STAGES[state.stage].maxHealth;
+      }
       state.targetHealth = state.targetMaxHealth;
-      state.moveOffsetX = 0;
-      state.jumpDriftX = 0;
+      state.onRoof = false;
+      state.jumpFromRoof = false;
+      state.jumpLandOnRoof = false;
+      state.jumpAllowsAirSteer = false;
+      state.walkVelocity = 0;
+      state.keyWalkAxis = 0;
+      state.buttonWalkAxis = 0;
+      state.lastFrameTime = 0;
       if (elements.resultOverlay) {
         elements.resultOverlay.hidden = true;
       }
       setTargetStage();
       updateSelectionCards();
       updateHud();
-      updateTargetVisual();
       setScreen("game");
+      syncTargetScaleWithCharacter();
+      const metrics = getArenaMetrics();
+      const spawnOffset = metrics.carCenterX - metrics.carHalfWidth - metrics.fighterWidth * 0.62 - metrics.baseLeft;
+      state.moveOffsetX = clampGroundOffset(state.stage === "car" ? spawnOffset : 0);
+      state.jumpStartOffsetX = state.moveOffsetX;
+      state.jumpTargetOffsetX = state.moveOffsetX;
+      updateTargetVisual();
       setSprite("idle");
       if (elements.fighterWrap) {
-        elements.fighterWrap.style.transform = "translate3d(0, 0, 0) scale(1)";
+        elements.fighterWrap.style.transform = `translate3d(${state.moveOffsetX}px, 0, 0) scale(1)`;
       }
       state.jumpStart = performance.now();
       state.gameTimer = window.setInterval(() => {
@@ -443,7 +903,14 @@ export default function App() {
       if (action === "idle") {
         state.crouching = false;
         state.airborne = false;
-        state.jumpDriftX = 0;
+        state.jumpStartOffsetX = state.moveOffsetX;
+        state.jumpTargetOffsetX = state.moveOffsetX;
+        state.walkVelocity = 0;
+        state.keyWalkAxis = 0;
+        state.buttonWalkAxis = 0;
+        state.jumpFromRoof = false;
+        state.jumpLandOnRoof = state.onRoof;
+        state.jumpAllowsAirSteer = false;
         if (state.actionTimer) {
           window.clearTimeout(state.actionTimer);
           state.actionTimer = null;
@@ -458,8 +925,9 @@ export default function App() {
       }
 
       if (action === "moveLeft" || action === "moveRight") {
-        const step = action === "moveLeft" ? -26 : 26;
-        state.moveOffsetX = Math.max(-58, Math.min(58, state.moveOffsetX + step));
+        const impulse = action === "moveLeft" ? -0.28 : 0.28;
+        state.walkVelocity = Math.max(-0.92, Math.min(0.92, state.walkVelocity + impulse));
+        state.moveOffsetX = state.onRoof ? clampRoofOffset(state.moveOffsetX) : clampGroundOffset(state.moveOffsetX);
         if (!state.airborne && !state.crouching) {
           state.action = "idle";
           setSprite("idle");
@@ -471,9 +939,17 @@ export default function App() {
         if (state.airborne) {
           return;
         }
+        const jumpIntent = state.onRoof ? resolveRoofJumpIntent() : "jump";
+        const landing = resolveJumpLanding(jumpIntent);
         state.crouching = false;
         state.airborne = true;
-        state.jumpDriftX = 0;
+        state.walkVelocity = 0;
+        state.jumpFromRoof = state.onRoof;
+        state.jumpLandOnRoof = landing.onRoof;
+        state.jumpAllowsAirSteer = jumpIntent === "jump";
+        state.onRoof = false;
+        state.jumpStartOffsetX = state.moveOffsetX;
+        state.jumpTargetOffsetX = landing.offset;
         state.action = "jump";
         state.jumpStart = performance.now();
         window.clearTimeout(state.jumpTimer);
@@ -481,8 +957,15 @@ export default function App() {
         state.jumpTimer = window.setTimeout(() => {
           state.airborne = false;
           state.jumpTimer = null;
+          state.onRoof = state.jumpLandOnRoof;
+          state.moveOffsetX = state.onRoof ? clampRoofOffset(state.jumpTargetOffsetX) : clampGroundOffset(state.jumpTargetOffsetX);
+          state.jumpFromRoof = false;
+          state.jumpLandOnRoof = state.onRoof;
+          state.jumpAllowsAirSteer = false;
+          state.jumpStartOffsetX = state.moveOffsetX;
+          state.jumpTargetOffsetX = state.moveOffsetX;
           returnToRestingPose();
-        }, 1500);
+        }, state.jumpDuration);
         return;
       }
 
@@ -490,9 +973,16 @@ export default function App() {
         if (state.airborne) {
           return;
         }
+        const landing = resolveJumpLanding(action);
         state.crouching = false;
         state.airborne = true;
-        state.jumpDriftX = action === "jumpLeft" ? -70 : 70;
+        state.walkVelocity = 0;
+        state.jumpFromRoof = state.onRoof;
+        state.jumpLandOnRoof = landing.onRoof;
+        state.jumpAllowsAirSteer = false;
+        state.onRoof = false;
+        state.jumpStartOffsetX = state.moveOffsetX;
+        state.jumpTargetOffsetX = landing.offset;
         state.action = "jump";
         state.jumpStart = performance.now();
         window.clearTimeout(state.jumpTimer);
@@ -500,9 +990,15 @@ export default function App() {
         state.jumpTimer = window.setTimeout(() => {
           state.airborne = false;
           state.jumpTimer = null;
-          state.jumpDriftX = 0;
+          state.onRoof = state.jumpLandOnRoof;
+          state.moveOffsetX = state.onRoof ? clampRoofOffset(state.jumpTargetOffsetX) : clampGroundOffset(state.jumpTargetOffsetX);
+          state.jumpFromRoof = false;
+          state.jumpLandOnRoof = state.onRoof;
+          state.jumpAllowsAirSteer = false;
+          state.jumpStartOffsetX = state.moveOffsetX;
+          state.jumpTargetOffsetX = state.moveOffsetX;
           returnToRestingPose();
-        }, 1500);
+        }, state.jumpDuration);
         return;
       }
 
@@ -521,8 +1017,11 @@ export default function App() {
         if (state.airborne) {
           return;
         }
+        if (state.onRoof) {
+          return;
+        }
         const step = action === "crouchLeft" ? -22 : 22;
-        state.moveOffsetX = Math.max(-58, Math.min(58, state.moveOffsetX + step));
+        state.moveOffsetX = clampGroundOffset(state.moveOffsetX + step);
         state.crouching = true;
         state.action = "crouch";
         window.clearTimeout(state.actionTimer);
@@ -543,7 +1042,7 @@ export default function App() {
       state.action = mappedAction;
       window.clearTimeout(state.actionTimer);
       setSprite(mappedAction);
-      applyDamage(damageMap[mappedAction] || 0);
+      applyDamage(damageMap[mappedAction] || 0, mappedAction);
 
       state.actionTimer = window.setTimeout(() => {
         state.actionTimer = null;
@@ -606,40 +1105,43 @@ export default function App() {
     on(elements.resultPlayAgain, "click", startGame);
 
     elements.controlButtons.forEach((button) => {
-      on(button, "click", () => performAction(button.dataset.action));
+      const action = button.dataset.action;
+      on(button, "click", () => performAction(action));
+
+      if (action === "moveLeft" || action === "moveRight") {
+        const axis = action === "moveLeft" ? -1 : 1;
+        on(button, "pointerdown", (event) => {
+          event.preventDefault();
+          state.buttonWalkAxis = axis;
+        });
+        on(button, "pointerup", () => {
+          if (state.buttonWalkAxis === axis) {
+            state.buttonWalkAxis = 0;
+          }
+        });
+        on(button, "pointercancel", () => {
+          if (state.buttonWalkAxis === axis) {
+            state.buttonWalkAxis = 0;
+          }
+        });
+        on(button, "pointerleave", () => {
+          if (state.buttonWalkAxis === axis) {
+            state.buttonWalkAxis = 0;
+          }
+        });
+      }
     });
 
-    const resolveArrowAction = () => {
-      const up = pressedArrows.has("ArrowUp");
-      const down = pressedArrows.has("ArrowDown");
+    const updateWalkAxisFromKeys = () => {
       const left = pressedArrows.has("ArrowLeft");
       const right = pressedArrows.has("ArrowRight");
-
-      if (up && left) {
-        return "jumpLeft";
+      if (left && !right) {
+        state.keyWalkAxis = -1;
+      } else if (right && !left) {
+        state.keyWalkAxis = 1;
+      } else {
+        state.keyWalkAxis = 0;
       }
-      if (up && right) {
-        return "jumpRight";
-      }
-      if (down && left) {
-        return "crouchLeft";
-      }
-      if (down && right) {
-        return "crouchRight";
-      }
-      if (up) {
-        return "jump";
-      }
-      if (down) {
-        return "crouch";
-      }
-      if (left) {
-        return "moveLeft";
-      }
-      if (right) {
-        return "moveRight";
-      }
-      return null;
     };
 
     const handleKeydown = (event) => {
@@ -647,7 +1149,7 @@ export default function App() {
         return;
       }
 
-      if (event.key === "z" || event.key === "x" || event.key === "Escape" || event.key === "q" || event.key === "e") {
+      if (event.key === "z" || event.key === "x" || event.key === "Escape") {
         event.preventDefault();
       }
 
@@ -663,24 +1165,18 @@ export default function App() {
         performAction("idle");
         return;
       }
-      if (event.key === "q") {
-        performAction("jumpLeft");
-        return;
-      }
-      if (event.key === "e") {
-        performAction("jumpRight");
-        return;
-      }
-
       if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         return;
       }
 
       event.preventDefault();
       pressedArrows.add(event.key);
-      const mappedAction = resolveArrowAction();
-      if (mappedAction) {
-        performAction(mappedAction);
+      updateWalkAxisFromKeys();
+
+      if (event.key === "ArrowUp") {
+        performAction("jump");
+      } else if (event.key === "ArrowDown") {
+        performAction("crouch");
       }
     };
 
@@ -689,12 +1185,34 @@ export default function App() {
         return;
       }
       pressedArrows.delete(event.key);
+      updateWalkAxisFromKeys();
+    };
+
+    const handleResize = () => {
+      if (!state.running) {
+        return;
+      }
+      syncTargetScaleWithCharacter();
+      const currentCenter = getCurrentFighterCenterX();
+      state.moveOffsetX = state.onRoof ? clampRoofOffset(state.moveOffsetX) : clampGroundOffset(state.moveOffsetX);
+      if (state.airborne) {
+        state.jumpStartOffsetX = clampGroundOffset(state.jumpStartOffsetX);
+        state.jumpTargetOffsetX = clampGroundOffset(state.jumpTargetOffsetX);
+      }
+      // Keep fighter near the same area after viewport changes.
+      if (!Number.isNaN(currentCenter)) {
+        const metrics = getArenaMetrics();
+        const desiredOffset = currentCenter - metrics.baseLeft - metrics.fighterWidth * 0.5;
+        state.moveOffsetX = state.onRoof ? clampRoofOffset(desiredOffset) : clampGroundOffset(desiredOffset);
+      }
     };
 
     window.addEventListener("keydown", handleKeydown);
     window.addEventListener("keyup", handleKeyup);
+    window.addEventListener("resize", handleResize);
     listeners.push(() => window.removeEventListener("keydown", handleKeydown));
     listeners.push(() => window.removeEventListener("keyup", handleKeyup));
+    listeners.push(() => window.removeEventListener("resize", handleResize));
 
     preloadSprites();
     updateSelectionCards();
@@ -818,15 +1336,15 @@ export default function App() {
 
               <div className="controls-overlay">
                 <div className="dpad" aria-label="Direction controls">
-                  <button className="control-button dpad-up-left" data-action="jumpLeft" type="button">↖</button>
+                  <span className="dpad-gap dpad-up-left" aria-hidden="true"></span>
                   <button className="control-button dpad-up" data-action="jump" type="button">↑</button>
-                  <button className="control-button dpad-up-right" data-action="jumpRight" type="button">↗</button>
+                  <span className="dpad-gap dpad-up-right" aria-hidden="true"></span>
                   <button className="control-button dpad-left" data-action="moveLeft" type="button">←</button>
                   <div className="joystick-core" aria-hidden="true"></div>
                   <button className="control-button dpad-right" data-action="moveRight" type="button">→</button>
-                  <button className="control-button dpad-down-left" data-action="crouchLeft" type="button">↙</button>
+                  <span className="dpad-gap dpad-down-left" aria-hidden="true"></span>
                   <button className="control-button dpad-down" data-action="crouch" type="button">↓</button>
-                  <button className="control-button dpad-down-right" data-action="crouchRight" type="button">↘</button>
+                  <span className="dpad-gap dpad-down-right" aria-hidden="true"></span>
                 </div>
                 <div className="action-pad" aria-label="Action controls">
                   <button className="control-button action-punch" data-action="punch" type="button">Punch</button>
