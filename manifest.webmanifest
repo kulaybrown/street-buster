@@ -1,0 +1,9 @@
+{
+  "name": "Street Buster Bonus Game",
+  "short_name": "Street Buster",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0a0b10",
+  "theme_color": "#111111",
+  "description": "A Street Fighter-inspired bonus game with character and stage selection."
+}
