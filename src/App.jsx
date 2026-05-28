@@ -79,7 +79,7 @@ export default function App() {
       score: 0,
       highScore: 0,
       combo: 0,
-      timeLeft: 30,
+      timeLeft: 60,
       running: false,
       crouching: false,
       airborne: false,
@@ -105,6 +105,10 @@ export default function App() {
       walkVelocity: 0,
       lastFrameTime: 0,
       carPartHealth: null,
+      attackCooldownByAction: {
+        punch: 0,
+        kick: 0,
+      },
     };
 
     const listeners = [];
@@ -420,7 +424,7 @@ export default function App() {
 
     function resolveJumpTargetOffset(action) {
       const metrics = getArenaMetrics();
-      const directionalStep = action === "jumpLeft" ? -120 : action === "jumpRight" ? 120 : 0;
+      const directionalStep = action === "jumpLeft" ? -170 : action === "jumpRight" ? 170 : 0;
       let desiredOffset = clampGroundOffset(state.moveOffsetX + directionalStep);
 
       if (state.stage !== "car") {
@@ -785,7 +789,7 @@ export default function App() {
       if (state.running && state.airborne && state.jumpAllowsAirSteer) {
         const walkAxis = getWalkAxis();
         if (walkAxis !== 0) {
-          const airSteerStep = walkAxis * 0.14 * deltaMs;
+          const airSteerStep = walkAxis * 0.22 * deltaMs;
           const nextTarget = state.jumpTargetOffsetX + airSteerStep;
           state.jumpTargetOffsetX = state.jumpLandOnRoof
             ? clampRoofOffset(nextTarget)
@@ -821,7 +825,7 @@ export default function App() {
       } else if (state.onRoof) {
         yOffset = -roofHeight;
       } else if (state.crouching) {
-        yOffset = 18;
+        yOffset = 0;
       }
 
       if (state.action === "punch" || state.action === "jumpPunch" || state.action === "crouchPunch") {
@@ -841,7 +845,7 @@ export default function App() {
       state.running = true;
       state.score = 0;
       state.combo = 0;
-      state.timeLeft = 30;
+      state.timeLeft = 60;
       state.crouching = false;
       state.airborne = false;
       state.action = "idle";
@@ -866,6 +870,8 @@ export default function App() {
       state.keyWalkAxis = 0;
       state.buttonWalkAxis = 0;
       state.lastFrameTime = 0;
+      state.attackCooldownByAction.punch = 0;
+      state.attackCooldownByAction.kick = 0;
       if (elements.resultOverlay) {
         elements.resultOverlay.hidden = true;
       }
@@ -939,9 +945,9 @@ export default function App() {
         if (state.airborne) {
           return;
         }
+        const keepCrouchAfterJump = state.crouching || pressedArrows.has("ArrowDown");
         const jumpIntent = state.onRoof ? resolveRoofJumpIntent() : "jump";
         const landing = resolveJumpLanding(jumpIntent);
-        state.crouching = false;
         state.airborne = true;
         state.walkVelocity = 0;
         state.jumpFromRoof = state.onRoof;
@@ -958,6 +964,7 @@ export default function App() {
           state.airborne = false;
           state.jumpTimer = null;
           state.onRoof = state.jumpLandOnRoof;
+          state.crouching = keepCrouchAfterJump;
           state.moveOffsetX = state.onRoof ? clampRoofOffset(state.jumpTargetOffsetX) : clampGroundOffset(state.jumpTargetOffsetX);
           state.jumpFromRoof = false;
           state.jumpLandOnRoof = state.onRoof;
@@ -973,8 +980,8 @@ export default function App() {
         if (state.airborne) {
           return;
         }
+        const keepCrouchAfterJump = state.crouching || pressedArrows.has("ArrowDown");
         const landing = resolveJumpLanding(action);
-        state.crouching = false;
         state.airborne = true;
         state.walkVelocity = 0;
         state.jumpFromRoof = state.onRoof;
@@ -991,6 +998,7 @@ export default function App() {
           state.airborne = false;
           state.jumpTimer = null;
           state.onRoof = state.jumpLandOnRoof;
+          state.crouching = keepCrouchAfterJump;
           state.moveOffsetX = state.onRoof ? clampRoofOffset(state.jumpTargetOffsetX) : clampGroundOffset(state.jumpTargetOffsetX);
           state.jumpFromRoof = false;
           state.jumpLandOnRoof = state.onRoof;
@@ -1027,6 +1035,14 @@ export default function App() {
         window.clearTimeout(state.actionTimer);
         setSprite("crouch");
         return;
+      }
+
+      if (action === "punch" || action === "kick") {
+        const now = performance.now();
+        if (now < state.attackCooldownByAction[action]) {
+          return;
+        }
+        state.attackCooldownByAction[action] = now + 500;
       }
 
       const mappedAction = state.airborne
@@ -1176,7 +1192,13 @@ export default function App() {
       if (event.key === "ArrowUp") {
         performAction("jump");
       } else if (event.key === "ArrowDown") {
-        performAction("crouch");
+        if (!state.airborne) {
+          state.crouching = true;
+          state.action = "crouch";
+          window.clearTimeout(state.actionTimer);
+          state.actionTimer = null;
+          setSprite("crouch");
+        }
       }
     };
 
@@ -1186,6 +1208,13 @@ export default function App() {
       }
       pressedArrows.delete(event.key);
       updateWalkAxisFromKeys();
+
+      if (event.key === "ArrowDown" && !state.airborne && state.crouching) {
+        state.crouching = false;
+        window.clearTimeout(state.actionTimer);
+        state.actionTimer = null;
+        returnToRestingPose();
+      }
     };
 
     const handleResize = () => {
@@ -1234,7 +1263,7 @@ export default function App() {
         <section className="top-bar">
           <div className="score-row">
             <div className="score-pill" id="hud-score">Score 0</div>
-            <div className="timer-pill" id="hud-time">30</div>
+            <div className="timer-pill" id="hud-time">60</div>
             <div className="score-pill" id="hud-high-score">High 0</div>
           </div>
           <div className="fight-row">

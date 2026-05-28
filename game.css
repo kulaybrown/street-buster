@@ -80,6 +80,24 @@ button {
   overflow: hidden;
 }
 
+[data-screen="start"] .app-shell {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-width: none;
+  padding: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+[data-screen="start"] .screen-start {
+  height: 100vh;
+  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
+}
+
 .top-bar {
   display: grid;
   gap: 8px;
@@ -278,9 +296,11 @@ h2 {
   align-items: center;
   justify-content: center;
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(8, 9, 16, 0.42), rgba(8, 9, 16, 0.82)),
-    url("assets/backgrounds/start-game-bg.png") center center / cover no-repeat;
+  border: 0;
+  border-radius: 0;
+  padding: 20px;
+  background: #06070d;
+  isolation: isolate;
 }
 
 .screen-start::before {
@@ -288,6 +308,22 @@ h2 {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at 50% 20%, rgba(255, 211, 102, 0.14), transparent 38%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.screen-start::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 9, 16, 0.38), rgba(8, 9, 16, 0.82)),
+    url("assets/backgrounds/start-game-bg.png") center 0% / 122% auto no-repeat;
+  background-size: 100% 100%, 122% auto;
+  background-position: center center, center 0%;
+  background-repeat: no-repeat, no-repeat;
+  animation: startBgSweep 2800ms ease-out forwards;
+  z-index: 0;
   pointer-events: none;
 }
 
@@ -363,6 +399,14 @@ h2 {
   position: relative;
   z-index: 1;
   text-align: center;
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+.screen-start.is-active .section-label,
+.screen-start.is-active h2,
+.screen-start.is-active .lead {
+  animation: startTextReveal 420ms ease-out 2300ms forwards;
 }
 
 .screen-start .section-label {
@@ -399,7 +443,8 @@ h2 {
   font-family: "Press Start 2P", monospace;
   font-weight: 800;
   box-shadow: none;
-  animation: startPulse 1.4s ease-in-out infinite;
+  opacity: 0;
+  transform: scale(0.9);
 }
 
 .start-button-text::before,
@@ -418,6 +463,19 @@ h2 {
 
 .start-button-text::after {
   animation-delay: 0.7s;
+}
+
+.screen-start.is-active .start-button-text {
+  animation: startButtonReveal 1ms linear 2850ms forwards, startPulse 1.4s ease-in-out 2900ms infinite;
+}
+
+.screen-start.is-active .start-button-text::before,
+.screen-start.is-active .start-button-text::after {
+  animation-delay: 2900ms, 3600ms;
+}
+
+.screen-start.is-active .start-button-text .start-arrow {
+  animation-delay: 2900ms;
 }
 
 .start-button-text:hover {
@@ -446,6 +504,33 @@ h2 {
     transform: translateY(-2px) scale(1.03);
     color: #ffffff;
     text-shadow: 0 0 16px rgba(255, 214, 116, 0.55);
+  }
+}
+
+@keyframes startBgSweep {
+  0% {
+    background-position: center center, center 0%;
+  }
+  100% {
+    background-position: center center, center 100%;
+  }
+}
+
+@keyframes startTextReveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes startButtonReveal {
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -865,7 +950,6 @@ h2 {
   align-items: flex-end;
   justify-content: center;
   transform: translate3d(0, 0, 0);
-  transition: transform 120ms ease;
   filter: drop-shadow(0 10px 0 rgba(0, 0, 0, 0.22));
 }
 
@@ -923,37 +1007,45 @@ h2 {
 }
 
 .stage-car {
-  width: 92%;
-  height: 68%;
+  width: 88%;
+  height: 74%;
   background: transparent;
   border: 0;
   box-shadow: none;
+  filter: drop-shadow(0 16px 14px rgba(0, 0, 0, 0.26));
 }
 
 .stage-car::before {
   content: "";
   position: absolute;
-  left: 15%;
-  right: 15%;
-  bottom: 9%;
-  height: 22%;
-  border-radius: 14px;
-  border: 3px solid rgba(77, 29, 18, 0.55);
+  left: 12%;
+  right: 12%;
+  bottom: 8%;
+  height: 38%;
+  border-radius: 24px 24px 18px 18px;
+  border: 3px solid rgba(76, 25, 15, 0.6);
   background:
-    linear-gradient(90deg, transparent 0 27%, rgba(0, 0, 0, 0.2) 27% 29%, transparent 29% 71%, rgba(0, 0, 0, 0.2) 71% 73%, transparent 73% 100%),
-    linear-gradient(180deg, #f2b16f, #ba5e34);
+    radial-gradient(circle at 19% 62%, rgba(255, 246, 175, 0.9) 0 8%, rgba(255, 246, 175, 0) 17%),
+    radial-gradient(circle at 81% 62%, rgba(255, 246, 175, 0.9) 0 8%, rgba(255, 246, 175, 0) 17%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0) 28%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.2) 0 6%, transparent 6% 30%, rgba(0, 0, 0, 0.24) 30% 35%, transparent 35% 65%, rgba(0, 0, 0, 0.24) 65% 70%, transparent 70% 94%, rgba(0, 0, 0, 0.2) 94% 100%),
+    linear-gradient(180deg, #f6bb78 0%, #d57142 55%, #7f2a1a 100%);
+  box-shadow: inset 0 -12px 0 rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.36);
 }
 
 .stage-car::after {
   content: "";
   position: absolute;
-  left: 27%;
-  right: 27%;
-  top: 18%;
-  height: 14%;
-  border-radius: 10px;
-  border: 3px solid rgba(56, 21, 16, 0.5);
-  background: linear-gradient(180deg, rgba(205, 236, 255, 0.75), rgba(117, 142, 179, 0.45));
+  left: 23%;
+  right: 23%;
+  top: 8%;
+  height: 24%;
+  border-radius: 14px 14px 10px 10px;
+  border: 3px solid rgba(56, 21, 16, 0.55);
+  background:
+    radial-gradient(circle at 28% 25%, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, rgba(221, 244, 255, 0.86), rgba(106, 133, 174, 0.54));
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.2);
 }
 
 .target-car-part {
@@ -968,28 +1060,28 @@ h2 {
 
 .target-car-slot-left,
 .target-car-slot-right {
-  top: 35%;
-  bottom: 16%;
-  width: 30%;
+  top: 46%;
+  bottom: 14%;
+  width: 31%;
 }
 
 .target-car-slot-left {
-  left: 7%;
+  left: 8%;
   --car-slot-art: var(--car-left-art, linear-gradient(180deg, #c65138, #6a1d12));
   --car-slot-border: var(--car-left-border, rgba(34, 11, 8, 0.65));
 }
 
 .target-car-slot-right {
-  right: 7%;
+  right: 8%;
   --car-slot-art: var(--car-right-art, linear-gradient(180deg, #c65138, #6a1d12));
   --car-slot-border: var(--car-right-border, rgba(34, 11, 8, 0.65));
 }
 
 .target-car-slot-roof {
-  left: 15%;
-  right: 15%;
-  top: 6%;
-  height: 30%;
+  left: 24%;
+  right: 24%;
+  top: 18%;
+  height: 26%;
   --car-slot-art: var(--car-roof-art, linear-gradient(180deg, #df7b62, #a13d28));
   --car-slot-border: var(--car-roof-border, rgba(46, 14, 10, 0.7));
 }
@@ -999,16 +1091,58 @@ h2 {
   width: 100%;
   height: 100%;
   border-radius: 12px;
+  position: relative;
+  overflow: hidden;
   background: var(--car-slot-art, linear-gradient(180deg, #c65138, #6a1d12));
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   border-color: var(--car-slot-border, rgba(34, 11, 8, 0.65));
-  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.target-car-box::before {
+  content: "";
+  position: absolute;
+  inset: 10% 7% auto;
+  height: 28%;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.04));
+  opacity: 0.6;
+}
+
+.target-car-box::after {
+  content: "";
+  position: absolute;
+  inset: auto 10% 12% 10%;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .target-car-box.roof-box {
-  border-radius: 14px 14px 10px 10px;
+  border-radius: 12px;
+}
+
+.target-car-slot-left::after,
+.target-car-slot-right::after {
+  content: "";
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  bottom: -28px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(236, 242, 251, 0.86) 0 24%, rgba(121, 129, 148, 0.84) 24% 40%, #141824 40% 66%, #080b13 66% 100%);
+  box-shadow: 0 0 0 3px rgba(17, 8, 8, 0.5), inset 0 -3px 4px rgba(0, 0, 0, 0.45);
+}
+
+.target-car-slot-left::after {
+  left: 4px;
+}
+
+.target-car-slot-right::after {
+  right: 4px;
 }
 
 .stage-car .target-car-wheel.left {
@@ -1025,15 +1159,15 @@ h2 {
 }
 
 .stage-car.damage-1 {
-  filter: saturate(0.95) brightness(0.95);
+  filter: saturate(0.95) brightness(0.95) contrast(1.02);
 }
 
 .stage-car.damage-2 {
-  filter: saturate(0.85) brightness(0.9);
+  filter: saturate(0.82) brightness(0.88) contrast(1.05);
 }
 
 .stage-car.damage-3 {
-  filter: saturate(0.75) brightness(0.82);
+  filter: saturate(0.68) brightness(0.78) contrast(1.08);
 }
 
 .stage-car.part-left-damaged .target-car-box.left-box,
@@ -1042,7 +1176,10 @@ h2 {
 .stage-car.right-door-damaged .target-car-box.right-box,
 .stage-car.part-roof-damaged .target-car-box.roof-box,
 .stage-car.roof-damaged .target-car-box.roof-box {
-  filter: saturate(0.72) brightness(0.84);
+  filter: saturate(0.62) brightness(0.76);
+  background-image:
+    repeating-linear-gradient(-32deg, rgba(30, 30, 30, 0.22), rgba(30, 30, 30, 0.22) 3px, transparent 3px, transparent 11px),
+    var(--car-slot-art, linear-gradient(180deg, #c65138, #6a1d12));
 }
 
 .stage-car.part-left-broken .target-car-box.left-box,
