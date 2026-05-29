@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 const SPRITES = {
   default: {
     idle: "assets/actions/default/default-idle-position.gif",
+    celebPost: "assets/actions/default/celeb-post.gif",
     punch: "assets/actions/default/default-punch-post.gif",
     kick: "assets/actions/default/default-kick-post.gif",
     jump: "assets/actions/default/default-jump-post.gif",
@@ -14,6 +15,7 @@ const SPRITES = {
   },
   "female-hulk": {
     idle: "assets/actions/female-hulk/female-hulk-idle-position.gif",
+    celebPost: "assets/actions/female-hulk/female-hulk-idle-position.gif",
     punch: "assets/actions/female-hulk/female-hulk-punch-post.gif",
     kick: "assets/actions/female-hulk/female-hulk-kick-post.gif",
     jump: "assets/actions/female-hulk/female-hulk-jump-post.gif",
@@ -43,6 +45,26 @@ const STAGES = {
   },
 };
 
+const CAR_VARIANTS = import.meta.glob("../assets/cars/*.gif", {
+  eager: true,
+  import: "default",
+});
+
+const CAR_VARIANT_URL_BY_CODE = Object.entries(CAR_VARIANTS).reduce((map, [filePath, asset]) => {
+  const match = filePath.match(/(\d{3})\.gif$/);
+  if (!match) {
+    return map;
+  }
+
+  const code = match[1];
+  const src = typeof asset === "string" ? asset : "";
+  if (src) {
+    map[code] = src;
+  }
+
+  return map;
+}, {});
+
 const damageMap = {
   punch: 1,
   kick: 2,
@@ -53,15 +75,76 @@ const damageMap = {
 };
 
 const CAR_PARTS = {
-  leftDoor: { label: "Left Door", maxHealth: 8 },
-  rightDoor: { label: "Right Door", maxHealth: 8 },
-  roof: { label: "Roof", maxHealth: 8 },
+  leftDoor: { label: "Left Door", maxHealth: 17 },
+  rightDoor: { label: "Right Hood", maxHealth: 19 },
+  roof: { label: "Roof", maxHealth: 12 },
 };
 
 const CHARACTER_TARGET_SCALE = {
   default: 1,
   "female-hulk": 1.08,
 };
+
+const END_ROUND_DELAY_MS = 5000;
+
+function getDamageTier(health, maxHealth) {
+  if (health <= 0) {
+    return 3;
+  }
+  if (health <= maxHealth * 0.5) {
+    return 2;
+  }
+  return 1;
+}
+
+function getCarVariantCode(carPartHealth) {
+  if (!carPartHealth) {
+    return "111";
+  }
+
+  const doorTier = getDamageTier(carPartHealth.leftDoor ?? CAR_PARTS.leftDoor.maxHealth, CAR_PARTS.leftDoor.maxHealth);
+  const roofTier = getDamageTier(carPartHealth.roof ?? CAR_PARTS.roof.maxHealth, CAR_PARTS.roof.maxHealth);
+  const hoodTier = getDamageTier(carPartHealth.rightDoor ?? CAR_PARTS.rightDoor.maxHealth, CAR_PARTS.rightDoor.maxHealth);
+
+  return `${doorTier}${roofTier}${hoodTier}`;
+}
+
+function getCarVariantArt(carPartHealth) {
+  const variantCode = getCarVariantCode(carPartHealth);
+  const directVariantUrl = `/assets/cars/${variantCode}.gif`;
+  const directFallbackUrl = "/assets/cars/111.gif";
+
+  return {
+    variantCode,
+    src:
+      CAR_VARIANT_URL_BY_CODE[variantCode] ||
+      CAR_VARIANT_URL_BY_CODE["111"] ||
+      directVariantUrl ||
+      directFallbackUrl,
+  };
+}
+
+function applyCarVariantToTarget(targetObject, carPartHealth) {
+  if (!targetObject) {
+    return;
+  }
+
+  const { variantCode, src } = getCarVariantArt(carPartHealth);
+  targetObject.dataset.carVariant = variantCode;
+  targetObject.classList.toggle("has-car-gif", Boolean(src));
+
+  const carArt = targetObject.querySelector(".target-car-art");
+  if (carArt && src) {
+    carArt.src = src;
+    carArt.alt = `Car target ${variantCode}`;
+  }
+
+  if (src) {
+    targetObject.style.setProperty("--car-combo-art", `url("${src}")`);
+  } else {
+    targetObject.style.removeProperty("--car-combo-art");
+  }
+}
 
 export default function App() {
   const rootRef = useRef(null);
@@ -90,6 +173,8 @@ export default function App() {
       actionTimer: null,
       jumpTimer: null,
       gameTimer: null,
+      bonusTimer: null,
+      finishTimer: null,
       frameId: null,
       jumpStart: 0,
       jumpDuration: 860,
@@ -239,6 +324,14 @@ export default function App() {
         window.clearInterval(state.gameTimer);
         state.gameTimer = null;
       }
+      if (state.bonusTimer) {
+        window.clearInterval(state.bonusTimer);
+        state.bonusTimer = null;
+      }
+      if (state.finishTimer) {
+        window.clearTimeout(state.finishTimer);
+        state.finishTimer = null;
+      }
       if (state.frameId) {
         window.cancelAnimationFrame(state.frameId);
         state.frameId = null;
@@ -260,11 +353,17 @@ export default function App() {
       elements.targetObject.className = `target ${STAGES[state.stage].stageClass}`;
       if (state.stage === "car") {
         elements.targetObject.innerHTML =
-          '<div class="target-car-slot target-car-slot-left"><div class="target-car-part target-car-box left-box"></div></div>' +
-          '<div class="target-car-slot target-car-slot-right"><div class="target-car-part target-car-box right-box"></div></div>' +
+          '<img class="target-car-art" src="" alt="Car target" draggable="false" />' +
+          '<div class="target-car-slot target-car-slot-left"><div class="target-car-part target-car-box left-box door-box"></div></div>' +
+          '<div class="target-car-slot target-car-slot-right"><div class="target-car-part target-car-box right-box hood-box"></div></div>' +
           '<div class="target-car-slot target-car-slot-roof"><div class="target-car-part target-car-box roof-box"></div></div>';
+
+        applyCarVariantToTarget(elements.targetObject, state.carPartHealth);
       } else {
         elements.targetObject.innerHTML = '<div class="crate-face"></div>';
+        elements.targetObject.style.removeProperty("--car-combo-art");
+        elements.targetObject.classList.remove("has-car-gif");
+        delete elements.targetObject.dataset.carVariant;
       }
     }
 
@@ -306,8 +405,14 @@ export default function App() {
       const metrics = getArenaMetrics();
       const centerOffset = metrics.carCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
       const roofHalfSpan = Math.max(72, metrics.carHalfWidth - metrics.fighterWidth * 0.12);
-      const minOffset = Math.max(metrics.minOffset, centerOffset - roofHalfSpan);
-      const maxOffset = Math.min(metrics.maxOffset, centerOffset + roofHalfSpan);
+      const roofLeftReachRatio = 0.9;
+      const leftRoofSpan = roofHalfSpan * roofLeftReachRatio;
+      const roofMinOffset = centerOffset - leftRoofSpan;
+      const blockBounds = getCarBlockBounds(metrics);
+      const alignedLeftGroundOffset = blockBounds.left - metrics.baseLeft - metrics.fighterWidth * 0.5;
+      const rightRoofOffsetAllowance = metrics.fighterWidth * 0.12;
+      const minOffset = Math.max(metrics.minOffset, roofMinOffset, alignedLeftGroundOffset);
+      const maxOffset = Math.min(metrics.maxOffset, centerOffset + roofHalfSpan + rightRoofOffsetAllowance);
       return {
         minOffset,
         maxOffset,
@@ -339,22 +444,29 @@ export default function App() {
       const arenaRect = elements.arena?.getBoundingClientRect();
       const targetRect = elements.targetWrap?.getBoundingClientRect();
       const fighterHalf = metrics.fighterWidth * 0.5;
+      const leftWalkthroughRatio = 0.3;
 
       if (!arenaRect || !targetRect) {
         const fallbackHalf = Math.max(56, metrics.carHalfWidth + metrics.fighterWidth * 0.08);
+        const fallbackLeft = metrics.carCenterX - fallbackHalf;
+        const fallbackRight = metrics.carCenterX + fallbackHalf;
+        const shiftedFallbackLeft = fallbackLeft + (fallbackRight - fallbackLeft) * leftWalkthroughRatio;
         return {
-          left: metrics.carCenterX - fallbackHalf,
-          right: metrics.carCenterX + fallbackHalf,
+          left: shiftedFallbackLeft,
+          right: fallbackRight,
         };
       }
 
       const targetLeft = targetRect.left - arenaRect.left;
       const targetRight = targetLeft + targetRect.width;
       const inset = targetRect.width * 0.12;
+      const blockLeft = targetLeft + inset - fighterHalf * 0.56;
+      const blockRight = targetRight - inset + fighterHalf * 0.56;
+      const shiftedLeft = blockLeft + (blockRight - blockLeft) * leftWalkthroughRatio;
 
       return {
-        left: targetLeft + inset - fighterHalf * 0.56,
-        right: targetRight - inset + fighterHalf * 0.56,
+        left: shiftedLeft,
+        right: blockRight,
       };
     }
 
@@ -410,7 +522,7 @@ export default function App() {
       const metrics = getArenaMetrics();
       const characterScale = CHARACTER_TARGET_SCALE[state.character] ?? 1;
       const targetSize = Math.round(
-        Math.max(210, Math.min(metrics.arenaWidth * 0.44, metrics.fighterWidth * 1.52 * characterScale)),
+        Math.max(262, Math.min(metrics.arenaWidth * 0.57, metrics.fighterWidth * 2.02 * characterScale)),
       );
 
       elements.targetWrap.style.width = `${targetSize}px`;
@@ -509,15 +621,28 @@ export default function App() {
     function getAttackPoint() {
       const arenaRect = elements.arena?.getBoundingClientRect();
       const fighterRect = elements.fighterWrap?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
       if (!arenaRect || !fighterRect) {
         return null;
       }
+
+      const fighterCenterX = fighterRect.left - arenaRect.left + fighterRect.width * 0.5;
+      const targetCenterX = targetRect
+        ? targetRect.left - arenaRect.left + targetRect.width * 0.5
+        : fighterCenterX;
+      const isCrouchPunch = state.action === "crouchPunch";
+      const attackXRatio = isCrouchPunch
+        ? fighterCenterX <= targetCenterX
+          ? 0.68
+          : 0.32
+        : fighterCenterX <= targetCenterX
+          ? 0.62
+          : 0.38;
+      const attackYRatio = state.airborne ? 0.35 : isCrouchPunch ? 0.7 : state.crouching ? 0.78 : 0.62;
+
       return {
-        x: fighterRect.left - arenaRect.left + fighterRect.width * 0.54,
-        y:
-          fighterRect.top -
-          arenaRect.top +
-          fighterRect.height * (state.airborne ? 0.35 : state.crouching ? 0.78 : 0.62),
+        x: fighterRect.left - arenaRect.left + fighterRect.width * attackXRatio,
+        y: fighterRect.top - arenaRect.top + fighterRect.height * attackYRatio,
       };
     }
 
@@ -548,19 +673,21 @@ export default function App() {
       }
 
       const baseReach = mappedAction.includes("Kick") ? 160 : 136;
+      const targetCenterX = targetRect.left - arenaRect.left + targetRect.width * 0.5;
+      const attackFromLeftSide = attackPoint.x <= targetCenterX;
 
       const partCenters = {
         leftDoor: {
-          x: targetRect.left - arenaRect.left + targetRect.width * 0.34,
-          y: targetRect.top - arenaRect.top + targetRect.height * 0.63,
+          x: targetRect.left - arenaRect.left + targetRect.width * 0.33,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.62,
         },
         rightDoor: {
-          x: targetRect.left - arenaRect.left + targetRect.width * 0.66,
-          y: targetRect.top - arenaRect.top + targetRect.height * 0.63,
+          x: targetRect.left - arenaRect.left + targetRect.width * 0.6,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.62,
         },
         roof: {
           x: targetRect.left - arenaRect.left + targetRect.width * 0.5,
-          y: targetRect.top - arenaRect.top + targetRect.height * 0.31,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.3,
         },
       };
 
@@ -586,7 +713,14 @@ export default function App() {
         if (partKey === "roof" && !allowRoof) {
           return;
         }
-        const reach = partKey === "roof" ? baseReach : baseReach + 28;
+        if (partKey === "rightDoor" && attackFromLeftSide) {
+          return;
+        }
+        if (partKey === "leftDoor" && !attackFromLeftSide) {
+          return;
+        }
+        const reach =
+          partKey === "roof" ? baseReach : partKey === "rightDoor" ? baseReach + 48 : baseReach + 28;
         const dx = attackPoint.x - center.x;
         const dy = attackPoint.y - center.y;
         const distance = Math.hypot(dx, dy * 1.25);
@@ -611,6 +745,8 @@ export default function App() {
         elements.targetObject.style.transform = `scale(${0.92 + ratio * 0.12})`;
         elements.targetObject.style.opacity = `${0.55 + ratio * 0.45}`;
         if (state.stage === "car") {
+          applyCarVariantToTarget(elements.targetObject, state.carPartHealth);
+
           elements.targetObject.classList.toggle("damage-1", ratio <= 0.85);
           elements.targetObject.classList.toggle("damage-2", ratio <= 0.55);
           elements.targetObject.classList.toggle("damage-3", ratio <= 0.25);
@@ -698,22 +834,82 @@ export default function App() {
       if (!state.running) {
         return;
       }
+
+      const baseScore = state.score;
+      const remainingTimeBonus = Math.max(0, Math.floor(state.timeLeft));
+      const finalScore = baseScore + remainingTimeBonus;
+      let bonusLeft = remainingTimeBonus;
+
       state.running = false;
       clearTimers();
-      if (elements.resultOverlay) {
-        elements.resultOverlay.hidden = false;
+      state.airborne = false;
+      state.crouching = false;
+      state.action = "celebPost";
+      setSprite("celebPost");
+      if (elements.stageBonusLabel) {
+        elements.stageBonusLabel.textContent = `Time Bonus ${bonusLeft}`;
       }
-      if (elements.resultLabel) {
-        elements.resultLabel.textContent = won ? "Victory" : "Time Up";
+      updateHud();
+
+      if (remainingTimeBonus > 0) {
+        const tickMs = Math.max(16, Math.floor(END_ROUND_DELAY_MS / remainingTimeBonus));
+        state.bonusTimer = window.setInterval(() => {
+          if (bonusLeft <= 0) {
+            if (state.bonusTimer) {
+              window.clearInterval(state.bonusTimer);
+              state.bonusTimer = null;
+            }
+            return;
+          }
+
+          bonusLeft -= 1;
+          state.score += 1;
+          if (state.score > state.highScore) {
+            state.highScore = state.score;
+          }
+          if (elements.stageBonusLabel) {
+            elements.stageBonusLabel.textContent = `Time Bonus ${bonusLeft}`;
+          }
+          updateHud();
+        }, tickMs);
       }
-      if (elements.resultTitle) {
-        elements.resultTitle.textContent = won ? "Target destroyed" : "Round over";
-      }
-      if (elements.resultCopy) {
-        elements.resultCopy.textContent = won
-          ? `You smashed the ${STAGES[state.stage].label.toLowerCase()} with a score of ${state.score}.`
-          : `The ${STAGES[state.stage].label.toLowerCase()} survived. Final score: ${state.score}.`;
-      }
+
+      state.finishTimer = window.setTimeout(() => {
+        state.finishTimer = null;
+        if (state.bonusTimer) {
+          window.clearInterval(state.bonusTimer);
+          state.bonusTimer = null;
+        }
+        state.score = finalScore;
+        if (elements.stageBonusLabel) {
+          elements.stageBonusLabel.textContent = "Complete";
+        }
+        if (state.score > state.highScore) {
+          state.highScore = state.score;
+          try {
+            window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+          } catch {
+            // Ignore storage failures.
+          }
+        }
+        updateHud();
+
+        if (elements.resultOverlay) {
+          elements.resultOverlay.hidden = false;
+        }
+        if (elements.resultLabel) {
+          elements.resultLabel.textContent = won ? "Victory" : "Time Up";
+        }
+        if (elements.resultTitle) {
+          elements.resultTitle.textContent = won ? "Target destroyed" : "Round over";
+        }
+        if (elements.resultCopy) {
+          const scoreBreakdown = `Base ${baseScore} + Time Bonus ${remainingTimeBonus} = ${finalScore}.`;
+          elements.resultCopy.textContent = won
+            ? `You smashed the ${STAGES[state.stage].label.toLowerCase()}. ${scoreBreakdown}`
+            : `The ${STAGES[state.stage].label.toLowerCase()} survived. ${scoreBreakdown}`;
+        }
+      }, END_ROUND_DELAY_MS);
     }
 
     function applyDamage(amount, mappedAction) {
