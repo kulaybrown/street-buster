@@ -45,6 +45,7 @@ button {
 
 [data-screen="start"] .top-bar,
 [data-screen="character"] .top-bar,
+[data-screen="skill"] .top-bar,
 [data-screen="stage"] .top-bar {
   display: none;
 }
@@ -283,6 +284,7 @@ h2 {
 }
 
 #screen-character,
+#screen-skill,
 #screen-stage {
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -682,6 +684,65 @@ h2 {
   box-shadow: none;
 }
 
+.character-choice-card.is-locked {
+  opacity: 0.65;
+  filter: grayscale(0.45);
+  cursor: not-allowed;
+  position: relative;
+}
+
+.character-choice-card .lock-badge {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: #ffd8a6;
+  background: rgba(38, 26, 14, 0.86);
+  border: 1px solid rgba(255, 198, 128, 0.45);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.skill-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 6px 0 24px;
+}
+
+.skill-card {
+  align-content: start;
+  justify-items: start;
+  text-align: left;
+  min-height: 138px;
+  gap: 8px;
+  padding: 14px;
+}
+
+.skill-card strong {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.skill-card span {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.skill-card small {
+  font-size: 0.98rem;
+  color: var(--muted);
+}
+
+.skill-card.is-selected {
+  border-color: rgba(118, 215, 255, 0.9);
+  box-shadow: 0 0 0 2px rgba(118, 215, 255, 0.26), var(--shadow);
+}
+
+.skill-card.is-disabled {
+  opacity: 0.45;
+}
+
 .stage-selected-character {
   grid-template-columns: 120px minmax(0, 1fr);
   justify-items: start;
@@ -973,6 +1034,41 @@ h2 {
   object-fit: contain;
   image-rendering: pixelated;
   transform-origin: bottom center;
+}
+
+.fighter-wrap.glow-breaker {
+  filter: drop-shadow(0 10px 0 rgba(0, 0, 0, 0.22)) drop-shadow(0 0 14px rgba(255, 74, 74, 0.85));
+}
+
+.fighter-wrap.glow-accelerate {
+  filter: drop-shadow(0 10px 0 rgba(0, 0, 0, 0.22)) drop-shadow(0 0 14px rgba(255, 220, 92, 0.9));
+}
+
+.fighter-wrap.glow-breaker.glow-accelerate {
+  filter:
+    drop-shadow(0 10px 0 rgba(0, 0, 0, 0.22))
+    drop-shadow(0 0 12px rgba(255, 74, 74, 0.8))
+    drop-shadow(0 0 16px rgba(255, 220, 92, 0.8));
+}
+
+.fighter-wrap.glow-breaker::after,
+.fighter-wrap.glow-accelerate::after {
+  height: 20px;
+  opacity: 0.92;
+}
+
+.fighter-wrap.glow-breaker::after {
+  background: radial-gradient(circle, rgba(255, 92, 92, 0.72) 0 36%, rgba(255, 70, 70, 0.12) 76%, transparent 100%);
+}
+
+.fighter-wrap.glow-accelerate::after {
+  background: radial-gradient(circle, rgba(255, 228, 116, 0.74) 0 38%, rgba(255, 205, 66, 0.14) 78%, transparent 100%);
+}
+
+.fighter-wrap.glow-breaker.glow-accelerate::after {
+  background:
+    radial-gradient(circle at 42% 54%, rgba(255, 92, 92, 0.68) 0 36%, transparent 68%),
+    radial-gradient(circle at 58% 54%, rgba(255, 228, 116, 0.68) 0 38%, transparent 70%);
 }
 
 .target-wrap {
@@ -1295,6 +1391,39 @@ h2 {
   pointer-events: none;
 }
 
+.meteor-impact-flash {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: min(55vw, 320px);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.3);
+  background:
+    radial-gradient(circle at center, rgba(255, 252, 225, 0.98) 0 10%, rgba(255, 224, 140, 0.95) 10% 22%, rgba(255, 153, 82, 0.86) 22% 40%, rgba(219, 70, 42, 0.56) 40% 60%, rgba(73, 12, 8, 0.24) 60% 76%, transparent 76% 100%),
+    conic-gradient(from 42deg, rgba(255, 210, 120, 0.22), rgba(255, 92, 60, 0.12), rgba(255, 210, 120, 0.22));
+  filter: drop-shadow(0 0 26px rgba(255, 116, 66, 0.72));
+  z-index: 6;
+}
+
+.impact-burst-wave {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 250, 214, 0.24) 0 10%, rgba(255, 192, 106, 0.24) 10% 20%, rgba(255, 88, 88, 0.18) 20% 33%, transparent 33% 100%),
+    linear-gradient(90deg, transparent 0 8%, rgba(255, 109, 74, 0.12) 22% 36%, rgba(255, 229, 136, 0.32) 46% 54%, rgba(255, 109, 74, 0.12) 64% 78%, transparent 92% 100%);
+  filter: saturate(1.15) contrast(1.1);
+  mix-blend-mode: screen;
+}
+
 .particle {
   position: absolute;
   width: 12px;
@@ -1303,6 +1432,12 @@ h2 {
   background: var(--accent);
   opacity: 0;
   animation: particle 500ms ease-out forwards;
+}
+
+.particle.debris {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35);
+  transform-origin: center;
+  animation: debrisBurst 760ms cubic-bezier(0.16, 0.75, 0.3, 1) forwards;
 }
 
 .controls {
@@ -1442,6 +1577,74 @@ h2 {
   border-color: rgba(118, 215, 255, 0.32);
 }
 
+.control-button[data-action="skill1"],
+.control-button[data-action="skill2"] {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(20, 23, 36, 0.92));
+}
+
+.control-button.action-skill {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "icon name"
+    "icon cd";
+  gap: 2px 8px;
+  align-items: center;
+  justify-items: start;
+  --skill-cooldown-progress: 0%;
+}
+
+.control-button.action-skill::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: var(--skill-cooldown-progress);
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(255, 200, 110, 0.95), rgba(118, 215, 255, 0.95));
+  transition: width 120ms linear;
+}
+
+.control-button.action-skill .skill-slot-icon {
+  grid-area: icon;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.control-button.action-skill .skill-slot-name {
+  grid-area: name;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.5rem;
+  line-height: 1.2;
+}
+
+.control-button.action-skill .skill-slot-cd {
+  grid-area: cd;
+  font-family: "VT323", monospace;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.84);
+  line-height: 1;
+}
+
+.control-button.action-skill.is-active {
+  box-shadow: 0 0 0 1px rgba(118, 215, 255, 0.55), 0 0 18px rgba(118, 215, 255, 0.32);
+}
+
+.control-button.action-skill.is-cooling {
+  filter: saturate(0.8) brightness(0.88);
+}
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -1512,6 +1715,20 @@ h2 {
   }
 }
 
+@keyframes debrisBurst {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  70% {
+    opacity: 0.98;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), calc(var(--dy) + 38px)) rotate(var(--spin, 180deg)) scale(0.4);
+  }
+}
+
 @media (max-width: 900px) {
   .top-bar {
     padding: 4px 0 2px;
@@ -1542,6 +1759,10 @@ h2 {
 
   .selection-grid,
   .status-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-selection-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1646,6 +1867,14 @@ h2 {
   .action-pad .control-button {
     font-size: 0.56rem;
     padding: 10px 6px;
+  }
+
+  .control-button.action-skill .skill-slot-name {
+    font-size: 0.45rem;
+  }
+
+  .control-button.action-skill .skill-slot-cd {
+    font-size: 0.78rem;
   }
 }
 
@@ -1812,6 +2041,24 @@ h2 {
   .action-pad .control-button {
     font-size: 0.5rem;
     padding: 9px 6px;
+  }
+
+  .control-button.action-skill {
+    gap: 1px 6px;
+  }
+
+  .control-button.action-skill .skill-slot-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 0.42rem;
+  }
+
+  .control-button.action-skill .skill-slot-name {
+    font-size: 0.42rem;
+  }
+
+  .control-button.action-skill .skill-slot-cd {
+    font-size: 0.72rem;
   }
 
   .control-button,

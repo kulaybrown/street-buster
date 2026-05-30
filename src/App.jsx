@@ -4,6 +4,8 @@ const SPRITES = {
   default: {
     idle: "assets/actions/default/default-idle-position.gif",
     celebPost: "assets/actions/default/celeb-post.gif",
+    meteorPunch: "assets/actions/default/meteor-punch.gif",
+    impactBurst: "assets/actions/default/impact-burst.gif",
     punch: "assets/actions/default/default-punch-post.gif",
     kick: "assets/actions/default/default-kick-post.gif",
     jump: "assets/actions/default/default-jump-post.gif",
@@ -30,6 +32,72 @@ const SPRITES = {
 const CHARACTER_LABELS = {
   default: "Default",
   "female-hulk": "Female Hulk",
+};
+
+const BALANCED_CHARACTER_STATS = {
+  strength: 5,
+  agility: 5,
+};
+
+const CHARACTER_STATS = {
+  default: {
+    strength: 5,
+    agility: 5,
+  },
+  "female-hulk": {
+    strength: 7,
+    agility: 4,
+  },
+};
+
+const LOCKED_CHARACTERS = new Set(["female-hulk"]);
+
+const MAX_EQUIPPED_SKILLS = 2;
+
+const SKILLS_BY_ID = {
+  meteorPunch: {
+    id: "meteorPunch",
+    name: "Meteor Punch",
+    icon: "MP",
+    description: "Fly up and slam the roof in 1s with 20% AOE.",
+    type: "active",
+    durationMs: 0,
+    cooldownMs: 12000,
+  },
+  breaker: {
+    id: "breaker",
+    name: "Breaker",
+    icon: "BR",
+    description: "Activate +15 Strength for 7s (15s cooldown).",
+    type: "active",
+    strengthBonus: 15,
+    durationMs: 7000,
+    cooldownMs: 15000,
+  },
+  accelerate: {
+    id: "accelerate",
+    name: "Accelerate",
+    icon: "AC",
+    description: "Activate +30 Agility for 7s (15s cooldown).",
+    type: "active",
+    agilityBonus: 30,
+    durationMs: 7000,
+    cooldownMs: 15000,
+  },
+  impactBurst: {
+    id: "impactBurst",
+    name: "Impact Burst",
+    icon: "IB",
+    description: "AOE burst: near target +22%, otherwise +15%.",
+    type: "active",
+    cooldownMs: 10000,
+    durationMs: 0,
+  },
+};
+
+const CHARACTER_SKILLS = {
+  default: ["meteorPunch", "breaker", "accelerate", "impactBurst"],
+  "female-hulk": [],
 };
 
 const STAGES = {
@@ -158,6 +226,7 @@ export default function App() {
     const state = {
       screen: "start",
       character: "default",
+      equippedSkillIds: [],
       stage: "car",
       score: 0,
       highScore: 0,
@@ -175,6 +244,7 @@ export default function App() {
       gameTimer: null,
       bonusTimer: null,
       finishTimer: null,
+      impactBurstTimer: null,
       frameId: null,
       jumpStart: 0,
       jumpDuration: 860,
@@ -194,6 +264,34 @@ export default function App() {
         punch: 0,
         kick: 0,
       },
+      skillRuntime: {
+        meteorPunch: {
+          activeUntil: 0,
+          cooldownUntil: 0,
+        },
+        breaker: {
+          activeUntil: 0,
+          cooldownUntil: 0,
+        },
+        accelerate: {
+          activeUntil: 0,
+          cooldownUntil: 0,
+        },
+        impactBurst: {
+          activeUntil: 0,
+          cooldownUntil: 0,
+        },
+      },
+      meteorStrike: {
+        active: false,
+        impacted: false,
+        startTime: 0,
+        durationMs: 1000,
+        startOffsetX: 0,
+        targetOffsetX: 0,
+        exitOffsetX: 0,
+        rotationDir: 1,
+      },
     };
 
     const listeners = [];
@@ -202,16 +300,113 @@ export default function App() {
     const q = (selector) => root.querySelector(selector);
     const qa = (selector) => Array.from(root.querySelectorAll(selector));
 
+    const getCharacterSkillIds = (character) => CHARACTER_SKILLS[character] || [];
+
+    const getCharacterSkillSet = (character) => new Set(getCharacterSkillIds(character));
+
+    const sanitizeEquippedSkills = () => {
+      const allowed = getCharacterSkillSet(state.character);
+      state.equippedSkillIds = state.equippedSkillIds
+        .filter((skillId) => allowed.has(skillId))
+        .slice(0, MAX_EQUIPPED_SKILLS);
+    };
+
+    const hasEquippedSkill = (skillId) => state.equippedSkillIds.includes(skillId);
+
+    const isSkillEffectActive = (skillId) => {
+      if (!hasEquippedSkill(skillId)) {
+        return false;
+      }
+      const runtime = state.skillRuntime[skillId];
+      if (!runtime) {
+        return false;
+      }
+      return performance.now() <= runtime.activeUntil;
+    };
+
+    const getRuntimeSkillBonusStats = () => {
+      const now = performance.now();
+      const bonus = {
+        strength: 0,
+        agility: 0,
+      };
+
+      ["breaker", "accelerate"].forEach((skillId) => {
+        if (!hasEquippedSkill(skillId)) {
+          return;
+        }
+
+        const runtime = state.skillRuntime[skillId];
+        if (!runtime || now > runtime.activeUntil) {
+          return;
+        }
+
+        const skill = SKILLS_BY_ID[skillId];
+        bonus.strength += skill?.strengthBonus || 0;
+        bonus.agility += skill?.agilityBonus || 0;
+      });
+
+      return bonus;
+    };
+
+    const resetSkillRuntime = () => {
+      ["meteorPunch", "breaker", "accelerate", "impactBurst"].forEach((skillId) => {
+        if (state.skillRuntime[skillId]) {
+          state.skillRuntime[skillId].activeUntil = 0;
+          state.skillRuntime[skillId].cooldownUntil = 0;
+        }
+      });
+    };
+
+    const getCharacterStats = (character) => {
+      const stats = CHARACTER_STATS[character] || BALANCED_CHARACTER_STATS;
+      const strength = Number.isFinite(stats.strength) ? stats.strength : BALANCED_CHARACTER_STATS.strength;
+      const agility = Number.isFinite(stats.agility) ? stats.agility : BALANCED_CHARACTER_STATS.agility;
+
+      return {
+        strength: Math.max(1, strength),
+        agility: Math.max(1, agility),
+      };
+    };
+
+    const getCurrentCharacterStats = () => {
+      const base = getCharacterStats(state.character);
+      const runtimeBonus = getRuntimeSkillBonusStats();
+
+      return {
+        strength: Math.max(1, base.strength + runtimeBonus.strength),
+        agility: Math.max(1, base.agility + runtimeBonus.agility),
+      };
+    };
+
+    const getCurrentCharacterBaseStats = () => getCharacterStats(state.character);
+
+    const formatStatsLabel = (stats) => `STR ${stats.strength} | AGI ${stats.agility}`;
+
+    const getAgilityMultiplier = () => getCurrentCharacterStats().agility / BALANCED_CHARACTER_STATS.agility;
+
+    const getStrengthMultiplier = () => getCurrentCharacterStats().strength / BALANCED_CHARACTER_STATS.strength;
+
+    const getCurrentJumpDuration = () => {
+      const agilityMultiplier = getAgilityMultiplier();
+      const scaledDuration = Math.round(860 / Math.max(0.5, agilityMultiplier));
+      return Math.max(620, Math.min(980, scaledDuration));
+    };
+
     const elements = {
       screens: {
         start: q("#screen-start"),
         character: q("#screen-character"),
+        skill: q("#screen-skill"),
         stage: q("#screen-stage"),
         game: q("#screen-game"),
       },
       startButton: q("#start-button"),
       characterBack: q("#character-back"),
       characterNext: q("#character-next"),
+      skillBack: q("#skill-back"),
+      skillNext: q("#skill-next"),
+      skillHint: q("#skill-selection-hint"),
       stageBack: q("#stage-back"),
       stageStart: q("#stage-start"),
       resultOverlay: q("#result-overlay"),
@@ -236,12 +431,19 @@ export default function App() {
       hudTime: q("#hud-time"),
       targetHitFlash: q("#target-hit-flash"),
       targetParticles: q("#target-particles"),
+      meteorImpactFlash: q("#meteor-impact-flash"),
+      impactBurstWave: q("#impact-burst-wave"),
       characterPreviewSprite: q("#character-preview-sprite"),
       characterPreviewName: q("#character-preview-name"),
+      characterPreviewStats: q("#character-preview-stats"),
       stageCharacterSprite: q("#stage-character-sprite"),
       stageCharacterName: q("#stage-character-name"),
+      stageCharacterStats: q("#stage-character-stats"),
       stageCharacterLabel: q("#stage-character-label"),
+      appShell: q(".app-shell"),
+      skillButtons: [q("#skill-slot-1"), q("#skill-slot-2")],
       characterCards: qa("#character-grid .choice-card"),
+      skillCards: qa("#skill-grid .skill-card"),
       stageCards: qa("#stage-grid .choice-card"),
       controlButtons: qa(".control-button[data-action]"),
     };
@@ -268,9 +470,36 @@ export default function App() {
     }
 
     function updateSelectionCards() {
+      sanitizeEquippedSkills();
+      const stats = getCurrentCharacterBaseStats();
+      const statsLabel = formatStatsLabel(stats);
+      const availableSkillSet = getCharacterSkillSet(state.character);
+
       elements.characterCards.forEach((card) => {
         card.classList.toggle("is-selected", card.dataset.character === state.character);
+        const character = card.dataset.character;
+        const locked = LOCKED_CHARACTERS.has(character);
+        card.classList.toggle("is-locked", locked);
+        card.disabled = locked;
       });
+
+      const reachedSkillLimit = state.equippedSkillIds.length >= MAX_EQUIPPED_SKILLS;
+      elements.skillCards.forEach((card) => {
+        const skillId = card.dataset.skill;
+        const canUseForCharacter = availableSkillSet.has(skillId);
+        const selected = state.equippedSkillIds.includes(skillId);
+        const disabledForLimit = !selected && reachedSkillLimit;
+
+        card.classList.toggle("is-selected", selected);
+        card.classList.toggle("is-disabled", !canUseForCharacter || disabledForLimit);
+        card.disabled = !canUseForCharacter || disabledForLimit;
+      });
+
+      if (elements.skillHint) {
+        const selectedCount = state.equippedSkillIds.length;
+        elements.skillHint.textContent = `${selectedCount}/${MAX_EQUIPPED_SKILLS} equipped`;
+      }
+
       elements.stageCards.forEach((card) => {
         card.classList.toggle("is-selected", card.dataset.stage === state.stage);
       });
@@ -281,6 +510,9 @@ export default function App() {
       if (elements.characterPreviewName) {
         elements.characterPreviewName.textContent = CHARACTER_LABELS[state.character];
       }
+      if (elements.characterPreviewStats) {
+        elements.characterPreviewStats.textContent = statsLabel;
+      }
       if (elements.stageCharacterSprite) {
         elements.stageCharacterSprite.src = SPRITES[state.character].idle;
         elements.stageCharacterSprite.alt = `${CHARACTER_LABELS[state.character]} idle preview`;
@@ -288,17 +520,23 @@ export default function App() {
       if (elements.stageCharacterName) {
         elements.stageCharacterName.textContent = CHARACTER_LABELS[state.character];
       }
+      if (elements.stageCharacterStats) {
+        elements.stageCharacterStats.textContent = statsLabel;
+      }
       if (elements.stageCharacterLabel) {
         elements.stageCharacterLabel.textContent = `Selected Fighter: ${CHARACTER_LABELS[state.character]}`;
       }
     }
 
     function updateHud() {
+      const stats = getCurrentCharacterStats();
+      const equippedSkillNames = state.equippedSkillIds.map((skillId) => SKILLS_BY_ID[skillId]?.name).filter(Boolean);
       if (elements.hudCharacter) {
-        elements.hudCharacter.textContent = `Character: ${CHARACTER_LABELS[state.character]}`;
+        elements.hudCharacter.textContent = `Character: ${CHARACTER_LABELS[state.character]} (${formatStatsLabel(stats)})`;
       }
       if (elements.hudStage) {
-        elements.hudStage.textContent = `Stage: ${STAGES[state.stage].label}`;
+        const skillText = equippedSkillNames.length > 0 ? ` | Skills: ${equippedSkillNames.join(", ")}` : "";
+        elements.hudStage.textContent = `Stage: ${STAGES[state.stage].label}${skillText}`;
       }
       if (elements.hudScore) {
         elements.hudScore.textContent = `Score: ${state.score}`;
@@ -309,6 +547,78 @@ export default function App() {
       if (elements.hudTime) {
         elements.hudTime.textContent = `${Math.max(0, state.timeLeft)}`;
       }
+      updateSkillButtons();
+    }
+
+    function updateSkillButtons() {
+      const now = performance.now();
+
+      if (elements.fighterWrap) {
+        const breakerRuntime = state.skillRuntime.breaker;
+        const accelerateRuntime = state.skillRuntime.accelerate;
+        const breakerActive = hasEquippedSkill("breaker") && breakerRuntime && now <= breakerRuntime.activeUntil;
+        const accelerateActive =
+          hasEquippedSkill("accelerate") && accelerateRuntime && now <= accelerateRuntime.activeUntil;
+
+        elements.fighterWrap.classList.toggle("glow-breaker", Boolean(breakerActive));
+        elements.fighterWrap.classList.toggle("glow-accelerate", Boolean(accelerateActive));
+      }
+
+      elements.skillButtons.forEach((button, slotIndex) => {
+        if (!button) {
+          return;
+        }
+
+        const skillId = state.equippedSkillIds[slotIndex];
+        const skill = skillId ? SKILLS_BY_ID[skillId] : null;
+        const runtime = skillId ? state.skillRuntime[skillId] : null;
+        const iconEl = button.querySelector(".skill-slot-icon");
+        const nameEl = button.querySelector(".skill-slot-name");
+        const cdEl = button.querySelector(".skill-slot-cd");
+
+        if (!skill || !runtime) {
+          button.disabled = true;
+          button.classList.remove("is-cooling", "is-active");
+          button.style.setProperty("--skill-cooldown-progress", "0%");
+          if (iconEl) {
+            iconEl.textContent = slotIndex === 0 ? "S1" : "S2";
+          }
+          if (nameEl) {
+            nameEl.textContent = "Empty";
+          }
+          if (cdEl) {
+            cdEl.textContent = "Ready";
+          }
+          return;
+        }
+
+        const remainingMs = Math.max(0, runtime.cooldownUntil - now);
+        const cooldownMs = Math.max(1, skill.cooldownMs || 1);
+        const ratio = Math.min(1, remainingMs / cooldownMs);
+        const active = now <= runtime.activeUntil;
+
+        button.disabled = false;
+        button.classList.toggle("is-cooling", remainingMs > 0);
+        button.classList.toggle("is-active", active);
+        button.style.setProperty("--skill-cooldown-progress", `${Math.round(ratio * 100)}%`);
+
+        if (iconEl) {
+          iconEl.textContent = skill.icon || "SK";
+        }
+        if (nameEl) {
+          nameEl.textContent = skill.name;
+        }
+        if (cdEl) {
+          if (active && skill.durationMs > 0) {
+            const activeLeft = Math.max(0, runtime.activeUntil - now);
+            cdEl.textContent = `On ${Math.ceil(activeLeft / 1000)}s`;
+          } else if (remainingMs > 0) {
+            cdEl.textContent = `CD ${Math.ceil(remainingMs / 1000)}s`;
+          } else {
+            cdEl.textContent = "Ready";
+          }
+        }
+      });
     }
 
     function clearTimers() {
@@ -332,9 +642,31 @@ export default function App() {
         window.clearTimeout(state.finishTimer);
         state.finishTimer = null;
       }
+      if (state.impactBurstTimer) {
+        window.clearTimeout(state.impactBurstTimer);
+        state.impactBurstTimer = null;
+      }
       if (state.frameId) {
         window.cancelAnimationFrame(state.frameId);
         state.frameId = null;
+      }
+      state.meteorStrike.active = false;
+      state.meteorStrike.impacted = false;
+      setMeteorFlightVisualState(false);
+    }
+
+    function setMeteorFlightVisualState(active) {
+      if (elements.arena) {
+        elements.arena.style.overflow = active ? "visible" : "";
+      }
+      if (elements.screens?.game) {
+        elements.screens.game.style.overflow = active ? "visible" : "";
+      }
+      if (elements.appShell) {
+        elements.appShell.style.overflow = active ? "visible" : "";
+      }
+      if (elements.fighterWrap) {
+        elements.fighterWrap.style.zIndex = active ? "40" : "";
       }
     }
 
@@ -646,6 +978,286 @@ export default function App() {
       };
     }
 
+    function getAnchorForCarPart(partKey) {
+      const byPart = {
+        leftDoor: { x: 34, y: 62 },
+        rightDoor: { x: 61, y: 62 },
+        roof: { x: 50, y: 30 },
+      };
+      return byPart[partKey] || { x: 50, y: 50 };
+    }
+
+    function getAttackAnchorForTargetWrap() {
+      const attackPoint = getAttackPoint();
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      if (!attackPoint || !arenaRect || !targetRect || targetRect.width <= 0 || targetRect.height <= 0) {
+        return { x: 50, y: 50 };
+      }
+
+      const localX = attackPoint.x - (targetRect.left - arenaRect.left);
+      const localY = attackPoint.y - (targetRect.top - arenaRect.top);
+      const x = Math.max(8, Math.min(92, (localX / targetRect.width) * 100));
+      const y = Math.max(8, Math.min(92, (localY / targetRect.height) * 100));
+
+      return { x, y };
+    }
+
+    function getNearBurstRatio() {
+      const attackPoint = getAttackPoint();
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      if (!attackPoint || !arenaRect || !targetRect) {
+        return 0.15;
+      }
+
+      const targetCenter = {
+        x: targetRect.left - arenaRect.left + targetRect.width * 0.5,
+        y: targetRect.top - arenaRect.top + targetRect.height * 0.64,
+      };
+      const distance = Math.hypot(attackPoint.x - targetCenter.x, (attackPoint.y - targetCenter.y) * 1.15);
+      return distance <= 110 ? 0.22 : 0.15;
+    }
+
+    function getImpactBurstBonusRatio(hitPart, mappedAction) {
+      if (state.stage === "car") {
+        const nearTarget = state.onRoof || hitPart === "roof" || mappedAction.startsWith("jump");
+        return nearTarget ? 0.22 : 0.15;
+      }
+
+      return getNearBurstRatio();
+    }
+
+    function castImpactBurst() {
+      if (!state.running || state.targetBroken) {
+        return;
+      }
+
+      state.action = "impactBurst";
+      setSprite("impactBurst");
+      window.clearTimeout(state.actionTimer);
+      state.actionTimer = window.setTimeout(() => {
+        state.actionTimer = null;
+        returnToRestingPose();
+      }, 720);
+
+      if (state.impactBurstTimer) {
+        window.clearTimeout(state.impactBurstTimer);
+      }
+
+      state.impactBurstTimer = window.setTimeout(() => {
+        state.impactBurstTimer = null;
+        if (!state.running || state.targetBroken) {
+          return;
+        }
+
+        triggerImpactBurstWave();
+
+        const strengthMultiplier = Math.max(0.5, Math.min(2, getStrengthMultiplier()));
+        const targetHealthBefore = state.targetHealth;
+        const hitAnchors = [];
+
+        if (state.stage === "car" && state.carPartHealth) {
+          const nearRatio = state.onRoof ? 0.22 : getNearBurstRatio();
+          const splashRatio = 0.15;
+          const focusPart = state.onRoof
+            ? "roof"
+            : getCurrentFighterCenterX() <= getArenaMetrics().carCenterX
+              ? "leftDoor"
+              : "rightDoor";
+
+          Object.entries(CAR_PARTS).forEach(([partKey, partMeta]) => {
+            if (state.carPartHealth[partKey] <= 0) {
+              return;
+            }
+            const ratio = partKey === focusPart ? nearRatio : splashRatio;
+            const before = state.carPartHealth[partKey];
+            const damage = Math.max(1, Math.round(partMeta.maxHealth * ratio * strengthMultiplier));
+            state.carPartHealth[partKey] = Math.max(0, state.carPartHealth[partKey] - damage);
+            if (state.carPartHealth[partKey] < before) {
+              hitAnchors.push(getAnchorForCarPart(partKey));
+            }
+          });
+
+          state.targetHealth = Object.values(state.carPartHealth).reduce((sum, health) => sum + health, 0);
+        } else {
+          const nearRatio = getNearBurstRatio();
+          const burstDamage = Math.max(1, Math.round(state.targetMaxHealth * nearRatio * strengthMultiplier));
+          state.targetHealth = Math.max(0, state.targetHealth - burstDamage);
+          if (burstDamage > 0) {
+            hitAnchors.push(getAttackAnchorForTargetWrap());
+          }
+        }
+
+        const actualDamageDone = Math.max(0, targetHealthBefore - state.targetHealth);
+        if (actualDamageDone > 0) {
+          state.score += actualDamageDone * 100;
+          if (state.score > state.highScore) {
+            state.highScore = state.score;
+            try {
+              window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+            } catch {
+              // Ignore storage failures.
+            }
+          }
+          state.combo += 1;
+          updateHud();
+          updateTargetVisual();
+          flashHit();
+          spawnParticles(hitAnchors);
+        }
+
+        if (state.targetHealth <= 0) {
+          state.targetBroken = true;
+          if (elements.targetObject) {
+            elements.targetObject.classList.add("broken");
+          }
+          if (elements.stageBonusLabel) {
+            elements.stageBonusLabel.textContent = "Broken";
+          }
+          window.setTimeout(() => finishGame(true), 650);
+        }
+      }, 400);
+    }
+
+    function castMeteorPunch() {
+      if (!state.running || state.targetBroken) {
+        return;
+      }
+
+      if (state.meteorStrike.active) {
+        return;
+      }
+
+      const metrics = getArenaMetrics();
+      const roofCenterOffset = metrics.carCenterX - metrics.baseLeft - metrics.fighterWidth * 0.5;
+      const currentOffset = state.moveOffsetX;
+      const targetOffsetX = state.stage === "car" ? clampRoofOffset(roofCenterOffset) : clampGroundOffset(roofCenterOffset);
+
+      state.crouching = false;
+      state.airborne = false;
+      state.onRoof = false;
+      state.walkVelocity = 0;
+      state.keyWalkAxis = 0;
+      state.buttonWalkAxis = 0;
+      state.jumpFromRoof = false;
+      state.jumpLandOnRoof = false;
+      state.jumpAllowsAirSteer = false;
+
+      state.action = "meteorPunch";
+      setSprite("meteorPunch");
+
+      state.meteorStrike.active = true;
+      state.meteorStrike.impacted = false;
+      state.meteorStrike.startTime = performance.now();
+      state.meteorStrike.startOffsetX = currentOffset;
+      state.meteorStrike.targetOffsetX = targetOffsetX;
+      state.meteorStrike.exitOffsetX = currentOffset;
+      state.meteorStrike.rotationDir = 1;
+      setMeteorFlightVisualState(true);
+
+      updateHud();
+    }
+
+    function applyMeteorImpactDamage() {
+      if (!state.running || state.targetBroken) {
+        return;
+      }
+
+      triggerMeteorGroundExplosion();
+
+      const strengthMultiplier = Math.max(0.5, Math.min(2, getStrengthMultiplier()));
+      const targetHealthBefore = state.targetHealth;
+      const hitAnchors = [];
+
+      if (state.stage === "car" && state.carPartHealth) {
+        Object.entries(CAR_PARTS).forEach(([partKey, partMeta]) => {
+          if (state.carPartHealth[partKey] <= 0) {
+            return;
+          }
+          const before = state.carPartHealth[partKey];
+          const damage = Math.max(1, Math.round(partMeta.maxHealth * 0.2 * strengthMultiplier));
+          state.carPartHealth[partKey] = Math.max(0, state.carPartHealth[partKey] - damage);
+          if (state.carPartHealth[partKey] < before) {
+            hitAnchors.push(getAnchorForCarPart(partKey));
+          }
+        });
+
+        state.targetHealth = Object.values(state.carPartHealth).reduce((sum, health) => sum + health, 0);
+      } else {
+        const burstDamage = Math.max(1, Math.round(state.targetMaxHealth * 0.2 * strengthMultiplier));
+        state.targetHealth = Math.max(0, state.targetHealth - burstDamage);
+        if (burstDamage > 0) {
+          hitAnchors.push(getAttackAnchorForTargetWrap());
+        }
+      }
+
+      const actualDamageDone = Math.max(0, targetHealthBefore - state.targetHealth);
+      if (actualDamageDone > 0) {
+        state.score += actualDamageDone * 100;
+        if (state.score > state.highScore) {
+          state.highScore = state.score;
+          try {
+            window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+          } catch {
+            // Ignore storage failures.
+          }
+        }
+        state.combo += 1;
+        updateHud();
+        updateTargetVisual();
+        flashHit();
+        spawnParticles(hitAnchors);
+      }
+
+      if (state.targetHealth <= 0) {
+        state.targetBroken = true;
+        if (elements.targetObject) {
+          elements.targetObject.classList.add("broken");
+        }
+        if (elements.stageBonusLabel) {
+          elements.stageBonusLabel.textContent = "Broken";
+        }
+        window.setTimeout(() => finishGame(true), 650);
+      }
+    }
+
+    function tryUseSkillAtSlot(slotIndex) {
+      const skillId = state.equippedSkillIds[slotIndex];
+      if (!skillId) {
+        return;
+      }
+
+      const skill = SKILLS_BY_ID[skillId];
+      if (!skill || skill.type !== "active") {
+        return;
+      }
+
+      const runtime = state.skillRuntime[skillId];
+      if (!runtime) {
+        return;
+      }
+
+      const now = performance.now();
+      if (now < runtime.cooldownUntil) {
+        return;
+      }
+
+      runtime.cooldownUntil = now + (skill.cooldownMs || 0);
+
+      if (skillId === "breaker" || skillId === "accelerate") {
+        runtime.activeUntil = now + (skill.durationMs || 0);
+      } else if (skillId === "meteorPunch") {
+        runtime.activeUntil = now + state.meteorStrike.durationMs;
+        castMeteorPunch();
+      } else if (skillId === "impactBurst") {
+        runtime.activeUntil = now;
+        castImpactBurst();
+      }
+
+      updateHud();
+    }
+
     function canReachTarget(mappedAction) {
       const attackPoint = getAttackPoint();
       const arenaRect = elements.arena?.getBoundingClientRect();
@@ -774,23 +1386,59 @@ export default function App() {
       }
     }
 
-    function spawnParticles() {
+    function spawnParticles(anchors = [{ x: 50, y: 50 }]) {
       if (!elements.targetParticles) {
         return;
       }
       elements.targetParticles.innerHTML = "";
-      for (let index = 0; index < 6; index += 1) {
-        const particle = document.createElement("span");
-        particle.className = "particle";
-        const angle = Math.random() * Math.PI * 2;
-        const distance = 24 + Math.random() * 56;
-        particle.style.left = `${45 + Math.random() * 12}%`;
-        particle.style.top = `${40 + Math.random() * 18}%`;
-        particle.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
-        particle.style.setProperty("--dy", `${Math.sin(angle) * distance * -0.6 - 18}px`);
-        particle.style.background = index % 2 === 0 ? "#f3b54a" : "#ff736d";
-        elements.targetParticles.appendChild(particle);
-      }
+
+      const burstAnchors = Array.isArray(anchors) && anchors.length > 0 ? anchors : [{ x: 50, y: 50 }];
+
+      const sparkPalette = state.stage === "car"
+        ? ["#ff4e57", "#161616", "#f3b54a", "#ffd98a"]
+        : ["#d03535", "#181818", "#f3b54a", "#c98a47"];
+      const debrisPalette = state.stage === "car"
+        ? ["#0e0e10", "#1f2024", "#7f0f0f", "#b62222", "#40465a"]
+        : ["#130d0d", "#3c1212", "#8a2a22", "#7a4a24", "#5a3519"];
+
+      burstAnchors.forEach((anchor) => {
+        for (let index = 0; index < 8; index += 1) {
+          const particle = document.createElement("span");
+          particle.className = "particle";
+          const angle = Math.random() * Math.PI * 2;
+          const distance = 34 + Math.random() * 88;
+          particle.style.left = `${anchor.x - 6 + Math.random() * 12}%`;
+          particle.style.top = `${anchor.y - 8 + Math.random() * 16}%`;
+          particle.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+          particle.style.setProperty("--dy", `${Math.sin(angle) * distance * -0.72 - 20}px`);
+          particle.style.background = sparkPalette[index % sparkPalette.length];
+          elements.targetParticles.appendChild(particle);
+        }
+      });
+
+      burstAnchors.forEach((anchor) => {
+        for (let index = 0; index < 10; index += 1) {
+          const debris = document.createElement("span");
+          debris.className = "particle debris";
+
+          const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.9;
+          const distance = 78 + Math.random() * 132;
+          const spinDeg = (Math.random() * 2 - 1) * 560;
+
+          debris.style.left = `${anchor.x - 9 + Math.random() * 18}%`;
+          debris.style.top = `${anchor.y - 10 + Math.random() * 20}%`;
+          debris.style.width = `${8 + Math.random() * 9}px`;
+          debris.style.height = `${6 + Math.random() * 8}px`;
+          debris.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+          debris.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
+          debris.style.setProperty("--spin", `${spinDeg}deg`);
+          debris.style.background = debrisPalette[index % debrisPalette.length];
+          debris.style.borderRadius = `${1 + Math.random() * 2}px`;
+          debris.style.animationDelay = `${Math.random() * 80}ms`;
+
+          elements.targetParticles.appendChild(debris);
+        }
+      });
     }
 
     function flashHit() {
@@ -813,6 +1461,114 @@ export default function App() {
             { transform: "translateX(-50%)" },
           ],
           { duration: 240, easing: "ease-out" },
+        );
+      }
+    }
+
+    function triggerMeteorGroundExplosion() {
+      if (elements.meteorImpactFlash) {
+        elements.meteorImpactFlash.animate(
+          [
+            { opacity: 0, transform: "translate(-50%, -50%) scale(0.2)", filter: "blur(1px)" },
+            { opacity: 0.96, transform: "translate(-50%, -50%) scale(0.88)", filter: "blur(0px)" },
+            { opacity: 0.74, transform: "translate(-50%, -50%) scale(1.38)", filter: "blur(1.2px)" },
+            { opacity: 0, transform: "translate(-50%, -50%) scale(2.9)", filter: "blur(2px)" },
+          ],
+          { duration: 560, easing: "cubic-bezier(0.12, 0.78, 0.2, 1)" },
+        );
+      }
+
+      if (elements.targetWrap) {
+        elements.targetWrap.animate(
+          [
+            { transform: "translateX(-50%) scale(1, 1)" },
+            { transform: "translateX(-50%) scale(1.035, 0.95)" },
+            { transform: "translateX(-50%) scale(0.985, 1.03)" },
+            { transform: "translateX(-50%) scale(1, 1)" },
+          ],
+          { duration: 420, easing: "cubic-bezier(0.2, 0.7, 0.22, 1)" },
+        );
+      }
+
+      if (elements.targetObject) {
+        elements.targetObject.animate(
+          [
+            { filter: "brightness(1) saturate(1)", transform: "scale(1)" },
+            { filter: "brightness(1.3) saturate(1.25)", transform: "scale(1.03)" },
+            { filter: "brightness(0.86) saturate(1.08)", transform: "scale(0.985)" },
+            { filter: "brightness(1) saturate(1)", transform: "scale(1)" },
+          ],
+          { duration: 460, easing: "cubic-bezier(0.17, 0.67, 0.22, 1)" },
+        );
+      }
+
+      if (elements.arena) {
+        elements.arena.animate(
+          [
+            { transform: "translateX(0px)" },
+            { transform: "translateX(-10px)" },
+            { transform: "translateX(9px)" },
+            { transform: "translateX(-6px)" },
+            { transform: "translateX(4px)" },
+            { transform: "translateX(0px)" },
+          ],
+          { duration: 300, easing: "ease-out" },
+        );
+      }
+    }
+
+    function triggerImpactBurstWave() {
+      if (!elements.impactBurstWave) {
+        return;
+      }
+
+      const fromLeft = state.moveOffsetX <= getArenaMetrics().carCenterX;
+      elements.impactBurstWave.animate(
+        [
+          {
+            opacity: 0,
+            filter: "blur(2px)",
+            transform: `translateX(${fromLeft ? "-120%" : "120%"}) scaleX(0.2) scaleY(0.84)`,
+          },
+          {
+            opacity: 0.98,
+            filter: "blur(0px)",
+            transform: "translateX(0%) scaleX(1.08) scaleY(1)",
+          },
+          {
+            opacity: 0.48,
+            filter: "blur(1px)",
+            transform: `translateX(${fromLeft ? "70%" : "-70%"}) scaleX(1.24) scaleY(0.94)`,
+          },
+          {
+            opacity: 0,
+            filter: "blur(2px)",
+            transform: `translateX(${fromLeft ? "120%" : "-120%"}) scaleX(0.86) scaleY(0.88)`,
+          },
+        ],
+        { duration: 560, easing: "cubic-bezier(0.16, 0.74, 0.2, 1)" },
+      );
+
+      if (elements.targetWrap) {
+        elements.targetWrap.animate(
+          [
+            { transform: "translateX(-50%) scale(1)" },
+            { transform: "translateX(-50%) scale(1.02)" },
+            { transform: "translateX(-50%) scale(0.992)" },
+            { transform: "translateX(-50%) scale(1)" },
+          ],
+          { duration: 420, easing: "cubic-bezier(0.21, 0.72, 0.22, 1)" },
+        );
+      }
+
+      if (elements.arena) {
+        elements.arena.animate(
+          [
+            { filter: "brightness(1)" },
+            { filter: "brightness(1.08)" },
+            { filter: "brightness(1)" },
+          ],
+          { duration: 280, easing: "ease-out" },
         );
       }
     }
@@ -917,6 +1673,11 @@ export default function App() {
         return;
       }
 
+      const strengthMultiplier = Math.max(0.5, Math.min(2, getStrengthMultiplier()));
+      const baseScaledAmount = Math.max(1, Math.round(amount * strengthMultiplier));
+      const targetHealthBefore = state.targetHealth;
+      const hitAnchors = [];
+
       if (state.stage === "car") {
         const hitPart = resolveCarPartHit(mappedAction);
         if (!hitPart || !state.carPartHealth) {
@@ -924,7 +1685,34 @@ export default function App() {
           updateTargetVisual();
           return;
         }
-        state.carPartHealth[hitPart] = Math.max(0, state.carPartHealth[hitPart] - amount);
+
+        const impactBurstBonusRatio = getImpactBurstBonusRatio(hitPart, mappedAction);
+        let primaryDamage = baseScaledAmount;
+
+        if (isSkillEffectActive("impactBurst")) {
+          primaryDamage += Math.max(1, Math.round(baseScaledAmount * impactBurstBonusRatio));
+        }
+
+        const primaryBefore = state.carPartHealth[hitPart];
+        state.carPartHealth[hitPart] = Math.max(0, state.carPartHealth[hitPart] - primaryDamage);
+        if (state.carPartHealth[hitPart] < primaryBefore) {
+          hitAnchors.push(getAnchorForCarPart(hitPart));
+        }
+
+        if (isSkillEffectActive("impactBurst")) {
+          const splashDamage = Math.max(1, Math.round(baseScaledAmount * 0.15));
+          Object.keys(state.carPartHealth).forEach((partKey) => {
+            if (partKey === hitPart) {
+              return;
+            }
+            const before = state.carPartHealth[partKey];
+            state.carPartHealth[partKey] = Math.max(0, state.carPartHealth[partKey] - splashDamage);
+            if (state.carPartHealth[partKey] < before) {
+              hitAnchors.push(getAnchorForCarPart(partKey));
+            }
+          });
+        }
+
         state.targetHealth = Object.values(state.carPartHealth).reduce((sum, health) => sum + health, 0);
       } else {
         if (!canReachTarget(mappedAction)) {
@@ -932,10 +1720,20 @@ export default function App() {
           updateTargetVisual();
           return;
         }
-        state.targetHealth = Math.max(0, state.targetHealth - amount);
+
+        const impactBurstBonusRatio = isSkillEffectActive("impactBurst") ? getNearBurstRatio() : 0;
+        const scaledAmount = Math.max(1, Math.round(baseScaledAmount * (1 + impactBurstBonusRatio)));
+        let totalDamage = scaledAmount;
+
+        state.targetHealth = Math.max(0, state.targetHealth - totalDamage);
+        if (totalDamage > 0) {
+          hitAnchors.push(getAttackAnchorForTargetWrap());
+        }
       }
 
-      state.score += amount * 100;
+      const actualDamageDone = Math.max(0, targetHealthBefore - state.targetHealth);
+
+      state.score += actualDamageDone * 100;
       if (state.score > state.highScore) {
         state.highScore = state.score;
         try {
@@ -948,7 +1746,7 @@ export default function App() {
       updateHud();
       updateTargetVisual();
       flashHit();
-      spawnParticles();
+      spawnParticles(hitAnchors);
       if (state.targetHealth <= 0) {
         state.targetBroken = true;
         if (elements.targetObject) {
@@ -965,9 +1763,66 @@ export default function App() {
       const deltaMs = state.lastFrameTime ? Math.min(40, now - state.lastFrameTime) : 16;
       state.lastFrameTime = now;
 
+      if (state.running && state.meteorStrike.active) {
+        const meteor = state.meteorStrike;
+        const progress = Math.min(1, (now - meteor.startTime) / meteor.durationMs);
+        const upEnd = 0.45;
+        const rotateEnd = 0.62;
+        const roofLift = state.stage === "car" ? getRoofHeight() : 0;
+        const viewportHeight = window.innerHeight || 900;
+        const fighterHeight = elements.fighterWrap?.getBoundingClientRect().height || 220;
+        // Push the fighter fully outside the visible viewport during meteor hang time.
+        const offscreenHeight = Math.max(viewportHeight + fighterHeight * 2, window.innerWidth <= 560 ? 760 : 980);
+        let xOffset = meteor.startOffsetX;
+        let yOffset = 0;
+        let rotationDeg = 0;
+
+        if (progress <= upEnd) {
+          const upT = progress / upEnd;
+          const easedUpT = 1 - (1 - upT) * (1 - upT);
+          xOffset = meteor.startOffsetX;
+          yOffset = -offscreenHeight * easedUpT;
+          rotationDeg = 0;
+        } else if (progress <= rotateEnd) {
+          const spinT = (progress - upEnd) / (rotateEnd - upEnd);
+          xOffset = meteor.startOffsetX + (meteor.targetOffsetX - meteor.startOffsetX) * spinT;
+          yOffset = -offscreenHeight;
+          rotationDeg = 180 * spinT;
+        } else {
+          const downT = (progress - rotateEnd) / (1 - rotateEnd);
+          const easedDownT = downT * downT;
+          xOffset = meteor.targetOffsetX;
+          yOffset = -offscreenHeight + (offscreenHeight - roofLift) * easedDownT;
+          rotationDeg = 180;
+        }
+
+        const fighterCenterX = getCurrentFighterCenterX(xOffset);
+        const targetCenterX = getArenaMetrics().carCenterX;
+        const facingScaleX = fighterCenterX <= targetCenterX ? 1 : -1;
+
+        if (elements.fighterWrap) {
+          elements.fighterWrap.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0) rotate(${rotationDeg}deg) scaleX(${facingScaleX})`;
+        }
+
+        if (progress >= 1 && !meteor.impacted) {
+          meteor.impacted = true;
+          state.moveOffsetX = state.stage === "car" ? clampRoofOffset(meteor.targetOffsetX) : clampGroundOffset(meteor.targetOffsetX);
+          state.onRoof = state.stage === "car";
+          applyMeteorImpactDamage();
+          returnToRestingPose();
+          meteor.active = false;
+          setMeteorFlightVisualState(false);
+        }
+
+        updateSkillButtons();
+        state.frameId = window.requestAnimationFrame(updateFighterPosition);
+        return;
+      }
+
       if (state.running && !state.airborne) {
+        const agilityMultiplier = Math.max(0.7, Math.min(1.4, getAgilityMultiplier()));
         const walkAxis = getWalkAxis();
-        const targetVelocity = walkAxis * (state.crouching ? 0.24 : 0.45);
+        const targetVelocity = walkAxis * (state.crouching ? 0.24 : 0.45) * agilityMultiplier;
         const blend = walkAxis !== 0 ? 0.28 : 0.22;
         state.walkVelocity += (targetVelocity - state.walkVelocity) * blend;
         if (Math.abs(state.walkVelocity) < 0.01) {
@@ -1033,6 +1888,7 @@ export default function App() {
       if (elements.fighterWrap) {
         elements.fighterWrap.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0) scaleX(${facingScaleX * poseScale}) scaleY(${poseScale})`;
       }
+      updateSkillButtons();
       state.frameId = window.requestAnimationFrame(updateFighterPosition);
     }
 
@@ -1062,12 +1918,16 @@ export default function App() {
       state.jumpFromRoof = false;
       state.jumpLandOnRoof = false;
       state.jumpAllowsAirSteer = false;
+      state.meteorStrike.active = false;
+      state.meteorStrike.impacted = false;
+      setMeteorFlightVisualState(false);
       state.walkVelocity = 0;
       state.keyWalkAxis = 0;
       state.buttonWalkAxis = 0;
       state.lastFrameTime = 0;
       state.attackCooldownByAction.punch = 0;
       state.attackCooldownByAction.kick = 0;
+      resetSkillRuntime();
       if (elements.resultOverlay) {
         elements.resultOverlay.hidden = true;
       }
@@ -1099,6 +1959,10 @@ export default function App() {
 
     function performAction(action) {
       if (!state.running) {
+        return;
+      }
+
+      if (state.meteorStrike.active) {
         return;
       }
 
@@ -1137,6 +2001,16 @@ export default function App() {
         return;
       }
 
+      if (action === "skill1") {
+        tryUseSkillAtSlot(0);
+        return;
+      }
+
+      if (action === "skill2") {
+        tryUseSkillAtSlot(1);
+        return;
+      }
+
       if (action === "jump") {
         if (state.airborne) {
           return;
@@ -1152,6 +2026,7 @@ export default function App() {
         state.onRoof = false;
         state.jumpStartOffsetX = state.moveOffsetX;
         state.jumpTargetOffsetX = landing.offset;
+        state.jumpDuration = getCurrentJumpDuration();
         state.action = "jump";
         state.jumpStart = performance.now();
         window.clearTimeout(state.jumpTimer);
@@ -1186,6 +2061,7 @@ export default function App() {
         state.onRoof = false;
         state.jumpStartOffsetX = state.moveOffsetX;
         state.jumpTargetOffsetX = landing.offset;
+        state.jumpDuration = getCurrentJumpDuration();
         state.action = "jump";
         state.jumpStart = performance.now();
         window.clearTimeout(state.jumpTimer);
@@ -1235,10 +2111,12 @@ export default function App() {
 
       if (action === "punch" || action === "kick") {
         const now = performance.now();
+        const agilityMultiplier = Math.max(0.65, Math.min(1.5, getAgilityMultiplier()));
+        const cooldownMs = Math.round(Math.max(280, 500 / agilityMultiplier));
         if (now < state.attackCooldownByAction[action]) {
           return;
         }
-        state.attackCooldownByAction[action] = now + 500;
+        state.attackCooldownByAction[action] = now + cooldownMs;
       }
 
       const mappedAction = state.airborne
@@ -1273,6 +2151,11 @@ export default function App() {
       updateSelectionCards();
     }
 
+    function goToSkillSelection() {
+      setScreen("skill");
+      updateSelectionCards();
+    }
+
     function goToStageSelection() {
       setScreen("stage");
       updateSelectionCards();
@@ -1296,7 +2179,35 @@ export default function App() {
 
     elements.characterCards.forEach((card) => {
       on(card, "click", () => {
-        state.character = card.dataset.character;
+        const character = card.dataset.character;
+        if (LOCKED_CHARACTERS.has(character)) {
+          return;
+        }
+        state.character = character;
+        sanitizeEquippedSkills();
+        updateSelectionCards();
+      });
+    });
+
+    elements.skillCards.forEach((card) => {
+      on(card, "click", () => {
+        const skillId = card.dataset.skill;
+        const available = getCharacterSkillSet(state.character);
+        if (!available.has(skillId)) {
+          return;
+        }
+
+        if (state.equippedSkillIds.includes(skillId)) {
+          state.equippedSkillIds = state.equippedSkillIds.filter((id) => id !== skillId);
+          updateSelectionCards();
+          return;
+        }
+
+        if (state.equippedSkillIds.length >= MAX_EQUIPPED_SKILLS) {
+          return;
+        }
+
+        state.equippedSkillIds = [...state.equippedSkillIds, skillId];
         updateSelectionCards();
       });
     });
@@ -1310,8 +2221,10 @@ export default function App() {
 
     on(elements.startButton, "click", goToCharacterSelection);
     on(elements.characterBack, "click", goToStart);
-    on(elements.characterNext, "click", goToStageSelection);
-    on(elements.stageBack, "click", goToCharacterSelection);
+    on(elements.characterNext, "click", goToSkillSelection);
+    on(elements.skillBack, "click", goToCharacterSelection);
+    on(elements.skillNext, "click", goToStageSelection);
+    on(elements.stageBack, "click", goToSkillSelection);
     on(elements.stageStart, "click", startGame);
     on(elements.resultChooseAgain, "click", goToCharacterSelection);
     on(elements.resultPlayAgain, "click", startGame);
@@ -1365,6 +2278,10 @@ export default function App() {
         event.preventDefault();
       }
 
+      if (event.key === "c" || event.key === "v") {
+        event.preventDefault();
+      }
+
       if (event.key === "z") {
         performAction("punch");
         return;
@@ -1375,6 +2292,14 @@ export default function App() {
       }
       if (event.key === "Escape") {
         performAction("idle");
+        return;
+      }
+      if (event.key === "c") {
+        performAction("skill1");
+        return;
+      }
+      if (event.key === "v") {
+        performAction("skill2");
         return;
       }
       if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
@@ -1440,6 +2365,7 @@ export default function App() {
     listeners.push(() => window.removeEventListener("resize", handleResize));
 
     preloadSprites();
+    sanitizeEquippedSkills();
     updateSelectionCards();
     updateHud();
     setTargetStage();
@@ -1491,19 +2417,55 @@ export default function App() {
               <img id="character-preview-sprite" className="character-preview-sprite" src="assets/actions/default/default-idle-position.gif" alt="Default idle preview" />
               <p className="character-preview-kicker">Selected Fighter</p>
               <h3 id="character-preview-name" className="character-preview-name">Default</h3>
+              <p id="character-preview-stats" className="selection-subtitle">STR 5 | AGI 5</p>
             </div>
             <div className="selection-grid character-selection-grid" id="character-grid">
               <button className="choice-card character-choice-card is-selected" data-character="default" type="button">
                 <img className="character-choice-image" src="assets/selection/select-default.gif" alt="Default selection preview" />
               </button>
-              <button className="choice-card character-choice-card" data-character="female-hulk" type="button">
+              <button className="choice-card character-choice-card is-locked" data-character="female-hulk" type="button" disabled>
                 <img className="character-choice-image" src="assets/selection/select-female-hulk.gif" alt="Female Hulk selection preview" />
+                <span className="lock-badge">Locked</span>
               </button>
             </div>
           </div>
           <div className="screen-actions">
             <button className="secondary-button" id="character-back" type="button">Back</button>
-            <button className="primary-button" id="character-next" type="button">Next: Stage</button>
+            <button className="primary-button" id="character-next" type="button">Next: Skills</button>
+          </div>
+        </section>
+
+        <section className="screen selection-screen" id="screen-skill">
+          <div className="panel-head panel-head-centered">
+            <h2 className="selection-title">Equip Skills</h2>
+            <p className="selection-subtitle">Choose up to 2 skills</p>
+          </div>
+          <p className="selection-subtitle" id="skill-selection-hint">0/2 equipped</p>
+          <div className="selection-grid skill-selection-grid" id="skill-grid">
+            <button className="choice-card skill-card" data-skill="meteorPunch" type="button">
+              <strong>MP Meteor Punch</strong>
+              <span>Fly up and slam the roof.</span>
+              <small>AOE 20% damage to all. 12s cooldown.</small>
+            </button>
+            <button className="choice-card skill-card" data-skill="breaker" type="button">
+              <strong>BR Breaker</strong>
+              <span>+15 Strength for 7s.</span>
+              <small>15s cooldown.</small>
+            </button>
+            <button className="choice-card skill-card" data-skill="accelerate" type="button">
+              <strong>AC Accelerate</strong>
+              <span>+30 Agility for 7s.</span>
+              <small>15s cooldown.</small>
+            </button>
+            <button className="choice-card skill-card" data-skill="impactBurst" type="button">
+              <strong>IB Impact Burst</strong>
+              <span>AOE burst: near +22%.</span>
+              <small>Other hits +15%. 10s cooldown.</small>
+            </button>
+          </div>
+          <div className="screen-actions">
+            <button className="secondary-button" id="skill-back" type="button">Back</button>
+            <button className="primary-button" id="skill-next" type="button">Next: Stage</button>
           </div>
         </section>
 
@@ -1518,6 +2480,7 @@ export default function App() {
               <div>
                 <p className="character-preview-kicker">Current Fighter</p>
                 <h3 id="stage-character-name" className="character-preview-name">Default</h3>
+                <p id="stage-character-stats" className="selection-subtitle">STR 5 | AGI 5</p>
               </div>
             </div>
             <div className="selection-grid stage-grid stage-selection-grid" id="stage-grid">
@@ -1553,7 +2516,10 @@ export default function App() {
                 <div className="target stage-car" id="target-object" aria-hidden="true"></div>
                 <div className="target-hit-flash" id="target-hit-flash"></div>
                 <div className="target-particles" id="target-particles"></div>
+                <div className="meteor-impact-flash" id="meteor-impact-flash"></div>
               </div>
+
+              <div className="impact-burst-wave" id="impact-burst-wave" aria-hidden="true"></div>
 
               <div className="fighter-wrap" id="fighter-wrap">
                 <img id="fighter-sprite" alt="Fighter sprite" />
@@ -1574,6 +2540,16 @@ export default function App() {
                 <div className="action-pad" aria-label="Action controls">
                   <button className="control-button action-punch" data-action="punch" type="button">Punch</button>
                   <button className="control-button action-kick" data-action="kick" type="button">Kick</button>
+                  <button className="control-button action-skill" data-action="skill1" id="skill-slot-1" type="button">
+                    <span className="skill-slot-icon">S1</span>
+                    <span className="skill-slot-name">Empty</span>
+                    <span className="skill-slot-cd">Ready</span>
+                  </button>
+                  <button className="control-button action-skill" data-action="skill2" id="skill-slot-2" type="button">
+                    <span className="skill-slot-icon">S2</span>
+                    <span className="skill-slot-name">Empty</span>
+                    <span className="skill-slot-cd">Ready</span>
+                  </button>
                 </div>
               </div>
             </div>
