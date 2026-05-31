@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import * as PIXI from "pixi.js";
 
 const SPRITES = {
   default: {
@@ -297,6 +298,22 @@ export default function App() {
     const listeners = [];
     const pressedArrows = new Set();
 
+    const meteorExplosion = {
+      initToken: 0,
+      app: null,
+      container: null,
+      textures: null,
+      particles: [],
+      impactParticles: [],
+      impactWaves: [],
+      impactWaveTimers: [],
+      auraParticles: [],
+      auraSpawnCarryBySkill: {
+        breaker: 0,
+        accelerate: 0,
+      },
+    };
+
     const q = (selector) => root.querySelector(selector);
     const qa = (selector) => Array.from(root.querySelectorAll(selector));
 
@@ -456,6 +473,613 @@ export default function App() {
       listeners.push(() => element.removeEventListener(event, handler));
     };
 
+    function createMeteorParticleTexture(color, size = 32) {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return PIXI.Texture.WHITE;
+      }
+
+      const center = size / 2;
+      const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(0.2, color);
+      gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+
+      return PIXI.Texture.from(canvas);
+    }
+
+    function ensureMeteorExplosionTextures() {
+      if (meteorExplosion.textures) {
+        return meteorExplosion.textures;
+      }
+
+      meteorExplosion.textures = {
+        core: createMeteorParticleTexture("rgba(255, 255, 230, 1)", 64),
+        fire: createMeteorParticleTexture("rgba(255, 90, 0, 1)", 32),
+        yellow: createMeteorParticleTexture("rgba(255, 210, 0, 1)", 24),
+        spark: createMeteorParticleTexture("rgba(255, 255, 150, 1)", 8),
+        smoke: createMeteorParticleTexture("rgba(40, 35, 35, 0.4)", 64),
+        impactCyan: createMeteorParticleTexture("rgba(0, 240, 255, 1)", 16),
+        impactPurple: createMeteorParticleTexture("rgba(180, 50, 255, 0.8)", 16),
+        impactWhite: createMeteorParticleTexture("rgba(255, 255, 255, 1)", 10),
+        breakerRed: createMeteorParticleTexture("rgba(255, 56, 46, 0.46)", 50),
+        breakerCore: createMeteorParticleTexture("rgba(255, 18, 18, 0.32)", 40),
+        accelerateYellow: createMeteorParticleTexture("rgba(255, 234, 60, 0.52)", 50),
+        accelerateGold: createMeteorParticleTexture("rgba(255, 185, 0, 0.38)", 40),
+        auraSpark: createMeteorParticleTexture("rgba(255, 250, 215, 0.72)", 10),
+      };
+
+      return meteorExplosion.textures;
+    }
+
+    function updateImpactBurstParticles(delta) {
+      const { impactParticles, impactWaves, container } = meteorExplosion;
+      if (!container) {
+        return;
+      }
+
+      for (let index = impactWaves.length - 1; index >= 0; index -= 1) {
+        const wave = impactWaves[index];
+        wave.graphics.clear();
+
+        wave.graphics.lineStyle(3 * wave.life, 0x00f0ff, wave.life);
+        wave.graphics.drawEllipse(0, 0, wave.radiusX, wave.radiusY);
+
+        wave.graphics.lineStyle(1 * wave.life, 0xffffff, wave.life * 0.72);
+        wave.graphics.drawEllipse(0, 0, wave.radiusX * 0.9, wave.radiusY * 0.9);
+
+        wave.radiusX += 16 * delta;
+        wave.radiusY += 8 * delta;
+        wave.life -= wave.decay * delta;
+
+        if (wave.radiusX >= wave.maxRadius || wave.life <= 0) {
+          container.removeChild(wave.graphics);
+          wave.graphics.destroy();
+          impactWaves.splice(index, 1);
+        }
+      }
+
+      for (let index = impactParticles.length - 1; index >= 0; index -= 1) {
+        const particle = impactParticles[index];
+        particle.sprite.x += particle.vx * delta;
+        particle.sprite.y += particle.vy * delta;
+
+        particle.vx *= 0.93;
+        particle.vy *= 0.93;
+
+        particle.life -= particle.decay * delta;
+        particle.sprite.alpha = Math.max(0, particle.life);
+
+        if (particle.isStreak) {
+          particle.sprite.scale.x = Math.max(0.1, particle.life * 6);
+        } else {
+          const scale = Math.max(0.1, particle.baseScale * particle.life * 1.5);
+          particle.sprite.scale.set(scale);
+        }
+
+        if (particle.life <= 0) {
+          container.removeChild(particle.sprite);
+          particle.sprite.destroy();
+          impactParticles.splice(index, 1);
+        }
+      }
+    }
+
+    function getAuraAnchorPoint() {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const fighterRect = elements.fighterWrap?.getBoundingClientRect();
+      if (!arenaRect || !fighterRect) {
+        return {
+          x: (elements.arena?.clientWidth || 0) * 0.3,
+          y: (elements.arena?.clientHeight || 0) * 0.62,
+          bodyWidth: 88,
+          bodyHeight: 138,
+        };
+      }
+
+      return {
+        x: fighterRect.left - arenaRect.left + fighterRect.width * 0.5,
+        y: fighterRect.top - arenaRect.top + fighterRect.height * 0.56,
+        bodyWidth: fighterRect.width * 0.7,
+        bodyHeight: fighterRect.height * 0.76,
+      };
+    }
+
+    function spawnSkillAuraParticle(skillId, textures, anchor) {
+      const container = meteorExplosion.container;
+      if (!container) {
+        return;
+      }
+
+      const roll = Math.random();
+      let texture;
+      let particleType = "flame";
+
+      if (roll > 0.88) {
+        texture = textures.auraSpark;
+        particleType = "spark";
+      } else if (skillId === "breaker") {
+        texture = roll > 0.48 ? textures.breakerRed : textures.breakerCore;
+      } else {
+        texture = roll > 0.44 ? textures.accelerateYellow : textures.accelerateGold;
+      }
+
+      const sprite = new PIXI.Sprite(texture);
+      sprite.anchor.set(0.5);
+      const orbitAngle = Math.random() * Math.PI * 2;
+      const sideBias = Math.random() > 0.5 ? 1 : -1;
+      const orbitRadiusX = anchor.bodyWidth * (0.2 + Math.random() * 0.24);
+      const orbitRadiusY = anchor.bodyHeight * (0.08 + Math.random() * 0.2);
+
+      // Bias particles toward the side silhouette so the aura hugs around the body.
+      sprite.x = anchor.x + Math.cos(orbitAngle) * orbitRadiusX + sideBias * (anchor.bodyWidth * 0.14);
+      sprite.y = anchor.y + Math.sin(orbitAngle) * orbitRadiusY + anchor.bodyHeight * 0.12;
+      sprite.blendMode = "add";
+      const baseAlpha = particleType === "spark" ? 0.45 : 0.34;
+      sprite.alpha = baseAlpha;
+
+      meteorExplosion.auraParticles.push({
+        sprite,
+        skillId,
+        type: particleType,
+        vy: Math.random() * 2 + 2,
+        waveSpeed: Math.random() * 0.05 + 0.02,
+        waveFrequency: Math.random() * 10 + 5,
+        time: Math.random() * 100,
+        life: 1,
+        decay: Math.random() * 0.015 + 0.01,
+        baseAlpha,
+      });
+
+      container.addChild(sprite);
+    }
+
+    function updateSkillAuraParticles(delta) {
+      const { auraParticles, auraSpawnCarryBySkill, container } = meteorExplosion;
+      if (!container) {
+        return;
+      }
+
+      const textures = ensureMeteorExplosionTextures();
+      const maxAuraParticles = 180;
+      const activeBreaker = state.running && isSkillEffectActive("breaker");
+      const activeAccelerate = state.running && isSkillEffectActive("accelerate");
+
+      if (activeBreaker || activeAccelerate) {
+        const anchor = getAuraAnchorPoint();
+
+        if (activeBreaker) {
+          auraSpawnCarryBySkill.breaker += 2.6 * delta;
+          const spawnCount = Math.min(4, Math.floor(auraSpawnCarryBySkill.breaker));
+          if (spawnCount > 0) {
+            auraSpawnCarryBySkill.breaker -= spawnCount;
+            for (let index = 0; index < spawnCount; index += 1) {
+              if (auraParticles.length >= maxAuraParticles) {
+                break;
+              }
+              spawnSkillAuraParticle("breaker", textures, anchor);
+            }
+          }
+        }
+
+        if (activeAccelerate) {
+          auraSpawnCarryBySkill.accelerate += 2.2 * delta;
+          const spawnCount = Math.min(3, Math.floor(auraSpawnCarryBySkill.accelerate));
+          if (spawnCount > 0) {
+            auraSpawnCarryBySkill.accelerate -= spawnCount;
+            for (let index = 0; index < spawnCount; index += 1) {
+              if (auraParticles.length >= maxAuraParticles) {
+                break;
+              }
+              spawnSkillAuraParticle("accelerate", textures, anchor);
+            }
+          }
+        }
+      } else {
+        auraSpawnCarryBySkill.breaker = 0;
+        auraSpawnCarryBySkill.accelerate = 0;
+      }
+
+      for (let index = auraParticles.length - 1; index >= 0; index -= 1) {
+        const particle = auraParticles[index];
+        particle.time += particle.waveSpeed * delta;
+        particle.sprite.y -= particle.vy * delta;
+
+        if (particle.type === "flame") {
+          particle.sprite.x += Math.sin(particle.time) * (particle.waveFrequency * 0.1) * delta;
+          particle.sprite.y += Math.cos(particle.time * 0.6) * 0.14 * delta;
+          if (particle.skillId === "breaker") {
+            particle.sprite.scale.x = Math.max(0.08, particle.life * 1.85);
+            particle.sprite.scale.y = Math.max(0.08, particle.life * 2.9);
+          } else {
+            particle.sprite.scale.x = Math.max(0.08, particle.life * 1.65);
+            particle.sprite.scale.y = Math.max(0.08, particle.life * 2.5);
+          }
+        } else {
+          particle.sprite.x += (Math.random() - 0.5) * 4 * delta;
+          const sparkScale = Math.max(0.08, particle.life * 1.05);
+          particle.sprite.scale.set(sparkScale);
+        }
+
+        const sourceStillActive = particle.skillId === "breaker" ? activeBreaker : activeAccelerate;
+        const fadeMultiplier = sourceStillActive ? 1 : 1.8;
+        particle.life -= particle.decay * delta * fadeMultiplier;
+        particle.sprite.alpha = Math.max(0, (particle.baseAlpha || 0.35) * particle.life);
+
+        if (particle.life <= 0) {
+          container.removeChild(particle.sprite);
+          particle.sprite.destroy();
+          auraParticles.splice(index, 1);
+        }
+      }
+    }
+
+    function updateMeteorExplosionParticles(ticker) {
+      const delta = ticker?.deltaTime ?? 1;
+      const { particles, container } = meteorExplosion;
+      if (!container) {
+        return;
+      }
+
+      for (let index = particles.length - 1; index >= 0; index -= 1) {
+        const particle = particles[index];
+        particle.sprite.x += particle.vx * delta;
+        particle.sprite.y += particle.vy * delta;
+        particle.life -= particle.decay * delta;
+
+        if (particle.type === "flash") {
+          particle.sprite.scale.set((1 - particle.life) * 8);
+          particle.sprite.alpha = particle.life;
+        } else if (particle.type === "fire" || particle.type === "yellow") {
+          particle.vx *= 0.93;
+          particle.vy *= 0.93;
+          particle.vy -= 0.05 * delta;
+          particle.sprite.scale.set(particle.life * 4);
+          particle.sprite.alpha = particle.life;
+        } else if (particle.type === "spark") {
+          particle.vx *= 0.96;
+          particle.vy *= 0.96;
+          particle.vy += 0.02 * delta;
+          particle.sprite.scale.set(particle.life * 1.5);
+          particle.sprite.alpha = particle.life;
+        } else if (particle.type === "smoke") {
+          particle.vx *= 0.9;
+          particle.vy *= 0.9;
+          particle.vy -= 0.08 * delta;
+          particle.sprite.scale.set((1 - particle.life) * 5 + 1.5);
+          particle.sprite.alpha = particle.life * 0.4;
+        }
+
+        if (particle.life <= 0) {
+          container.removeChild(particle.sprite);
+          particle.sprite.destroy();
+          particles.splice(index, 1);
+        }
+      }
+
+      updateImpactBurstParticles(delta);
+      updateSkillAuraParticles(delta);
+    }
+
+    async function initMeteorExplosionLayer() {
+      if (!elements.arena || meteorExplosion.app) {
+        return;
+      }
+
+      const token = meteorExplosion.initToken + 1;
+      meteorExplosion.initToken = token;
+
+      const app = new PIXI.Application();
+      await app.init({
+        width: Math.max(1, Math.floor(elements.arena.clientWidth || 1)),
+        height: Math.max(1, Math.floor(elements.arena.clientHeight || 1)),
+        backgroundAlpha: 0,
+        antialias: true,
+        autoDensity: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        resizeTo: elements.arena,
+      });
+
+      if (meteorExplosion.initToken !== token) {
+        app.destroy(true);
+        return;
+      }
+
+      const canvas = app.canvas || app.view;
+      if (!canvas) {
+        app.destroy(true);
+        return;
+      }
+
+      canvas.classList.add("meteor-pixi-layer");
+      elements.arena.appendChild(canvas);
+
+      const container = new PIXI.Container();
+      app.stage.addChild(container);
+
+      meteorExplosion.app = app;
+      meteorExplosion.container = container;
+      meteorExplosion.particles = [];
+      meteorExplosion.impactParticles = [];
+      meteorExplosion.impactWaves = [];
+      meteorExplosion.auraParticles = [];
+      meteorExplosion.auraSpawnCarryBySkill.breaker = 0;
+      meteorExplosion.auraSpawnCarryBySkill.accelerate = 0;
+      ensureMeteorExplosionTextures();
+
+      app.ticker.add(updateMeteorExplosionParticles);
+      syncMeteorExplosionLayerSize();
+    }
+
+    function syncMeteorExplosionLayerSize() {
+      if (!meteorExplosion.app || !elements.arena) {
+        return;
+      }
+
+      const width = Math.max(1, Math.floor(elements.arena.clientWidth || 0));
+      const height = Math.max(1, Math.floor(elements.arena.clientHeight || 0));
+      if (width <= 1 || height <= 1) {
+        return;
+      }
+
+      if (meteorExplosion.app.renderer.width !== width || meteorExplosion.app.renderer.height !== height) {
+        meteorExplosion.app.renderer.resize(width, height);
+      }
+    }
+
+    function destroyMeteorExplosionLayer() {
+      meteorExplosion.initToken += 1;
+
+      if (meteorExplosion.impactWaveTimers.length > 0) {
+        meteorExplosion.impactWaveTimers.forEach((timerId) => {
+          window.clearTimeout(timerId);
+        });
+        meteorExplosion.impactWaveTimers = [];
+      }
+
+      if (meteorExplosion.app) {
+        meteorExplosion.app.ticker.remove(updateMeteorExplosionParticles);
+        meteorExplosion.app.destroy(true);
+      }
+
+      meteorExplosion.particles = [];
+      meteorExplosion.impactParticles = [];
+      meteorExplosion.impactWaves = [];
+      meteorExplosion.auraParticles = [];
+      meteorExplosion.auraSpawnCarryBySkill.breaker = 0;
+      meteorExplosion.auraSpawnCarryBySkill.accelerate = 0;
+
+      if (meteorExplosion.textures) {
+        Object.values(meteorExplosion.textures).forEach((texture) => {
+          if (texture && texture !== PIXI.Texture.WHITE) {
+            texture.destroy(true);
+          }
+        });
+      }
+
+      meteorExplosion.app = null;
+      meteorExplosion.container = null;
+      meteorExplosion.textures = null;
+    }
+
+    function spawnMeteorParticle(x, y, texture, type, speedConfig) {
+      const container = meteorExplosion.container;
+      if (!container) {
+        return;
+      }
+
+      const sprite = new PIXI.Sprite(texture);
+      sprite.anchor.set(0.5);
+      sprite.x = x;
+      sprite.y = y;
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * speedConfig.max + speedConfig.min;
+
+      if (type !== "smoke") {
+        sprite.blendMode = "add";
+      }
+
+      meteorExplosion.particles.push({
+        sprite,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: Math.random() * (speedConfig.maxDecay - speedConfig.minDecay) + speedConfig.minDecay,
+        type,
+      });
+
+      container.addChild(sprite);
+    }
+
+    function spawnMeteorFlash(x, y) {
+      const textures = ensureMeteorExplosionTextures();
+      const container = meteorExplosion.container;
+      if (!container) {
+        return;
+      }
+
+      const sprite = new PIXI.Sprite(textures.core);
+      sprite.anchor.set(0.5);
+      sprite.x = x;
+      sprite.y = y;
+      sprite.scale.set(0.1);
+      sprite.blendMode = "add";
+
+      meteorExplosion.particles.push({
+        sprite,
+        vx: 0,
+        vy: 0,
+        life: 1,
+        decay: 0.08,
+        type: "flash",
+      });
+
+      container.addChild(sprite);
+    }
+
+    function spawnImpactWave(startX, startY, targetX, targetY) {
+      const container = meteorExplosion.container;
+      if (!container) {
+        return;
+      }
+
+      const angle = Math.atan2(targetY - startY, targetX - startX);
+      const graphics = new PIXI.Graphics();
+      graphics.x = startX;
+      graphics.y = startY;
+      graphics.rotation = angle;
+
+      meteorExplosion.impactWaves.push({
+        graphics,
+        radiusX: 10,
+        radiusY: 5,
+        maxRadius: 320,
+        life: 1,
+        decay: 0.03,
+      });
+
+      container.addChild(graphics);
+    }
+
+    function spawnImpactParticle(startX, startY, targetX, targetY, texture, isStreak = false) {
+      const container = meteorExplosion.container;
+      if (!container) {
+        return;
+      }
+
+      const sprite = new PIXI.Sprite(texture);
+      sprite.anchor.set(0.5);
+      sprite.x = startX;
+      sprite.y = startY;
+      sprite.blendMode = "add";
+
+      const baseAngle = Math.atan2(targetY - startY, targetX - startX);
+      const conicalSpread = (Math.random() - 0.5) * (Math.PI / 3);
+      const finalAngle = baseAngle + conicalSpread;
+      const speed = Math.random() * 15 + 8;
+      const baseScale = Math.random() * 1.5 + 0.5;
+
+      if (isStreak) {
+        sprite.scale.x = Math.random() * 4 + 2;
+        sprite.scale.y = 0.5;
+        sprite.rotation = finalAngle;
+      } else {
+        sprite.scale.set(baseScale);
+      }
+
+      meteorExplosion.impactParticles.push({
+        sprite,
+        vx: Math.cos(finalAngle) * speed,
+        vy: Math.sin(finalAngle) * speed,
+        life: 1,
+        decay: Math.random() * 0.04 + 0.02,
+        baseScale,
+        isStreak,
+      });
+
+      container.addChild(sprite);
+    }
+
+    function getImpactBurstTargetPoint() {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      if (!arenaRect || !targetRect) {
+        const fallback = getAttackPoint();
+        if (fallback) {
+          return fallback;
+        }
+        return {
+          x: (arenaRect?.width || 0) * 0.62,
+          y: (arenaRect?.height || 0) * 0.56,
+        };
+      }
+
+      return {
+        x: targetRect.left - arenaRect.left + targetRect.width * 0.5,
+        y: targetRect.top - arenaRect.top + targetRect.height * 0.56,
+      };
+    }
+
+    function triggerImpactBurstPixiEffect() {
+      if (!meteorExplosion.container) {
+        initMeteorExplosionLayer()
+          .then(() => {
+            syncMeteorExplosionLayerSize();
+            triggerImpactBurstPixiEffect();
+          })
+          .catch(() => {
+            // Ignore renderer initialization failures.
+          });
+        return;
+      }
+
+      const textures = ensureMeteorExplosionTextures();
+      const startPoint = getAttackPoint() || {
+        x: (elements.arena?.clientWidth || 0) * 0.25,
+        y: (elements.arena?.clientHeight || 0) * 0.58,
+      };
+      const targetPoint = getImpactBurstTargetPoint();
+
+      if (meteorExplosion.impactWaveTimers.length > 0) {
+        meteorExplosion.impactWaveTimers.forEach((timerId) => {
+          window.clearTimeout(timerId);
+        });
+        meteorExplosion.impactWaveTimers = [];
+      }
+
+      for (let index = 0; index < 3; index += 1) {
+        const timerId = window.setTimeout(() => {
+          meteorExplosion.impactWaveTimers = meteorExplosion.impactWaveTimers.filter((id) => id !== timerId);
+          spawnImpactWave(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y);
+        }, index * 80);
+        meteorExplosion.impactWaveTimers.push(timerId);
+      }
+
+      for (let index = 0; index < 40; index += 1) {
+        spawnImpactParticle(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y, textures.impactCyan, true);
+      }
+
+      for (let index = 0; index < 25; index += 1) {
+        spawnImpactParticle(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y, textures.impactPurple, false);
+      }
+
+      for (let index = 0; index < 30; index += 1) {
+        spawnImpactParticle(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y, textures.impactWhite, false);
+      }
+    }
+
+    function triggerMeteorPixiExplosion(x, y) {
+      if (!meteorExplosion.container) {
+        return;
+      }
+
+      const textures = ensureMeteorExplosionTextures();
+      spawnMeteorFlash(x, y);
+
+      for (let index = 0; index < 80; index += 1) {
+        spawnMeteorParticle(x, y, textures.fire, "fire", { min: 1, max: 6, minDecay: 0.015, maxDecay: 0.03 });
+      }
+
+      for (let index = 0; index < 50; index += 1) {
+        spawnMeteorParticle(x, y, textures.yellow, "yellow", { min: 2, max: 8, minDecay: 0.02, maxDecay: 0.04 });
+      }
+
+      for (let index = 0; index < 60; index += 1) {
+        spawnMeteorParticle(x, y, textures.spark, "spark", { min: 8, max: 16, minDecay: 0.01, maxDecay: 0.025 });
+      }
+
+      for (let index = 0; index < 40; index += 1) {
+        spawnMeteorParticle(x, y, textures.smoke, "smoke", { min: 0.5, max: 4, minDecay: 0.008, maxDecay: 0.015 });
+      }
+    }
+
     function setScreen(name) {
       state.screen = name;
       root.dataset.screen = name;
@@ -464,6 +1088,15 @@ export default function App() {
           element.classList.toggle("is-active", screenName === name);
         }
       });
+      if (name === "game") {
+        initMeteorExplosionLayer()
+          .then(() => {
+            syncMeteorExplosionLayerSize();
+          })
+          .catch(() => {
+            // Ignore renderer initialization failures.
+          });
+      }
       if (name !== "game" && elements.resultOverlay) {
         elements.resultOverlay.hidden = true;
       }
@@ -552,17 +1185,6 @@ export default function App() {
 
     function updateSkillButtons() {
       const now = performance.now();
-
-      if (elements.fighterWrap) {
-        const breakerRuntime = state.skillRuntime.breaker;
-        const accelerateRuntime = state.skillRuntime.accelerate;
-        const breakerActive = hasEquippedSkill("breaker") && breakerRuntime && now <= breakerRuntime.activeUntil;
-        const accelerateActive =
-          hasEquippedSkill("accelerate") && accelerateRuntime && now <= accelerateRuntime.activeUntil;
-
-        elements.fighterWrap.classList.toggle("glow-breaker", Boolean(breakerActive));
-        elements.fighterWrap.classList.toggle("glow-accelerate", Boolean(accelerateActive));
-      }
 
       elements.skillButtons.forEach((button, slotIndex) => {
         if (!button) {
@@ -978,6 +1600,39 @@ export default function App() {
       };
     }
 
+    function getMeteorImpactPoint() {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const fighterRect = elements.fighterWrap?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+
+      if (arenaRect && fighterRect) {
+        const footX = fighterRect.left - arenaRect.left + fighterRect.width * 0.5;
+        const footY = fighterRect.bottom - arenaRect.top - 8;
+
+        return {
+          x: Math.max(0, Math.min(arenaRect.width, footX)),
+          y: Math.max(0, Math.min(arenaRect.height, footY)),
+        };
+      }
+
+      if (arenaRect && targetRect) {
+        return {
+          x: targetRect.left - arenaRect.left + targetRect.width * 0.5,
+          y: targetRect.top - arenaRect.top + targetRect.height * 0.34,
+        };
+      }
+
+      const attackPoint = getAttackPoint();
+      if (attackPoint) {
+        return attackPoint;
+      }
+
+      return {
+        x: (arenaRect?.width || 0) * 0.5,
+        y: (arenaRect?.height || 0) * 0.6,
+      };
+    }
+
     function getAnchorForCarPart(partKey) {
       const byPart = {
         leftDoor: { x: 34, y: 62 },
@@ -1052,6 +1707,7 @@ export default function App() {
         }
 
         triggerImpactBurstWave();
+        triggerImpactBurstPixiEffect();
 
         const strengthMultiplier = Math.max(0.5, Math.min(2, getStrengthMultiplier()));
         const targetHealthBefore = state.targetHealth;
@@ -1466,17 +2122,21 @@ export default function App() {
     }
 
     function triggerMeteorGroundExplosion() {
-      if (elements.meteorImpactFlash) {
-        elements.meteorImpactFlash.animate(
-          [
-            { opacity: 0, transform: "translate(-50%, -50%) scale(0.2)", filter: "blur(1px)" },
-            { opacity: 0.96, transform: "translate(-50%, -50%) scale(0.88)", filter: "blur(0px)" },
-            { opacity: 0.74, transform: "translate(-50%, -50%) scale(1.38)", filter: "blur(1.2px)" },
-            { opacity: 0, transform: "translate(-50%, -50%) scale(2.9)", filter: "blur(2px)" },
-          ],
-          { duration: 560, easing: "cubic-bezier(0.12, 0.78, 0.2, 1)" },
-        );
+      if (!meteorExplosion.container) {
+        initMeteorExplosionLayer()
+          .then(() => {
+            syncMeteorExplosionLayerSize();
+            const delayedImpactPoint = getMeteorImpactPoint();
+            triggerMeteorPixiExplosion(delayedImpactPoint.x, delayedImpactPoint.y);
+          })
+          .catch(() => {
+            // Ignore renderer initialization failures.
+          });
       }
+
+      syncMeteorExplosionLayerSize();
+      const impactPoint = getMeteorImpactPoint();
+      triggerMeteorPixiExplosion(impactPoint.x, impactPoint.y);
 
       if (elements.targetWrap) {
         elements.targetWrap.animate(
@@ -2339,6 +2999,7 @@ export default function App() {
     };
 
     const handleResize = () => {
+      syncMeteorExplosionLayerSize();
       if (!state.running) {
         return;
       }
@@ -2374,6 +3035,7 @@ export default function App() {
 
     return () => {
       clearTimers();
+      destroyMeteorExplosionLayer();
       listeners.forEach((off) => off());
     };
   }, []);
