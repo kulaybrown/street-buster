@@ -3517,7 +3517,7 @@ export default function App() {
             <h2>Smash the target before time runs out.</h2>
             <p className="lead">Choose your fighter, pick the stage, then punch and kick your way through the bonus round.</p>
             <button className="primary-button start-button-text" id="start-button" type="button">
-              Tap to Start <span className="start-arrow">›</span>
+              Start Game <span className="start-arrow">›</span>
             </button>
           </div>
         </section>
