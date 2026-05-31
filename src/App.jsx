@@ -60,6 +60,7 @@ const SKILLS_BY_ID = {
     id: "meteorPunch",
     name: "Meteor Punch",
     icon: "MP",
+    iconSrc: "assets/skill-icons/meteor-punch.jpg",
     description: "Fly up and slam the roof in 1s with 20% AOE.",
     type: "active",
     durationMs: 0,
@@ -69,6 +70,7 @@ const SKILLS_BY_ID = {
     id: "breaker",
     name: "Breaker",
     icon: "BR",
+    iconSrc: "assets/skill-icons/breaker.jpg",
     description: "Activate +15 Strength for 7s (15s cooldown).",
     type: "active",
     strengthBonus: 15,
@@ -79,6 +81,7 @@ const SKILLS_BY_ID = {
     id: "accelerate",
     name: "Accelerate",
     icon: "AC",
+    iconSrc: "assets/skill-icons/accelerate.jpg",
     description: "Activate +30 Agility for 7s (15s cooldown).",
     type: "active",
     agilityBonus: 30,
@@ -89,6 +92,7 @@ const SKILLS_BY_ID = {
     id: "impactBurst",
     name: "Impact Burst",
     icon: "IB",
+    iconSrc: "assets/skill-icons/impact-burst.jpg",
     description: "AOE burst: near target +22%, otherwise +15%.",
     type: "active",
     cooldownMs: 10000,
@@ -154,7 +158,8 @@ const CHARACTER_TARGET_SCALE = {
   "female-hulk": 1.08,
 };
 
-const END_ROUND_DELAY_MS = 5000;
+const END_ROUND_DELAY_MS = 3000;
+const METEOR_EFFECT_SIZE_MULTIPLIER = 2;
 
 function getDamageTier(health, maxHealth) {
   if (health <= 0) {
@@ -246,6 +251,7 @@ export default function App() {
       bonusTimer: null,
       finishTimer: null,
       impactBurstTimer: null,
+      specialSkillSwapLockUntil: 0,
       frameId: null,
       jumpStart: 0,
       jumpDuration: 860,
@@ -306,12 +312,25 @@ export default function App() {
       particles: [],
       impactParticles: [],
       impactWaves: [],
+      burstEffects: [],
+      normalHitRings: [],
       impactWaveTimers: [],
       auraParticles: [],
       auraSpawnCarryBySkill: {
         breaker: 0,
         accelerate: 0,
       },
+    };
+
+    const victoryCelebration = {
+      initToken: 0,
+      app: null,
+      fireworkContainer: null,
+      confettiContainer: null,
+      confettiParticles: [],
+      fireworkRockets: [],
+      fireworkShards: [],
+      fireworkTimer: 0,
     };
 
     const q = (selector) => root.querySelector(selector);
@@ -339,6 +358,12 @@ export default function App() {
         return false;
       }
       return performance.now() <= runtime.activeUntil;
+    };
+
+    const isSpecialSkillSwapLocked = () => performance.now() < state.specialSkillSwapLockUntil;
+
+    const setSpecialSkillSwapLock = (delayMs = 500) => {
+      state.specialSkillSwapLockUntil = performance.now() + delayMs;
     };
 
     const getRuntimeSkillBonusStats = () => {
@@ -505,8 +530,8 @@ export default function App() {
         yellow: createMeteorParticleTexture("rgba(255, 210, 0, 1)", 24),
         spark: createMeteorParticleTexture("rgba(255, 255, 150, 1)", 8),
         smoke: createMeteorParticleTexture("rgba(40, 35, 35, 0.4)", 64),
-        impactCyan: createMeteorParticleTexture("rgba(0, 240, 255, 1)", 16),
-        impactPurple: createMeteorParticleTexture("rgba(180, 50, 255, 0.8)", 16),
+        impactCrimson: createMeteorParticleTexture("rgba(255, 0, 51, 1)", 16),
+        impactDarkRed: createMeteorParticleTexture("rgba(139, 0, 0, 0.95)", 16),
         impactWhite: createMeteorParticleTexture("rgba(255, 255, 255, 1)", 10),
         breakerRed: createMeteorParticleTexture("rgba(255, 56, 46, 0.46)", 50),
         breakerCore: createMeteorParticleTexture("rgba(255, 18, 18, 0.32)", 40),
@@ -519,7 +544,7 @@ export default function App() {
     }
 
     function updateImpactBurstParticles(delta) {
-      const { impactParticles, impactWaves, container } = meteorExplosion;
+      const { impactParticles, impactWaves, burstEffects, normalHitRings, container } = meteorExplosion;
       if (!container) {
         return;
       }
@@ -528,21 +553,50 @@ export default function App() {
         const wave = impactWaves[index];
         wave.graphics.clear();
 
-        wave.graphics.lineStyle(3 * wave.life, 0x00f0ff, wave.life);
-        wave.graphics.drawEllipse(0, 0, wave.radiusX, wave.radiusY);
+        wave.graphics.arc(0, 0, wave.radius, wave.startAngle, wave.endAngle);
+        wave.graphics.stroke({
+          color: 0x8b0000,
+          width: Math.max(4, wave.width * wave.life),
+          alpha: Math.max(0, wave.life),
+          cap: "round",
+        });
 
-        wave.graphics.lineStyle(1 * wave.life, 0xffffff, wave.life * 0.72);
-        wave.graphics.drawEllipse(0, 0, wave.radiusX * 0.9, wave.radiusY * 0.9);
-
-        wave.radiusX += 16 * delta;
-        wave.radiusY += 8 * delta;
+        wave.radius += 18 * delta;
         wave.life -= wave.decay * delta;
 
-        if (wave.radiusX >= wave.maxRadius || wave.life <= 0) {
+        if (wave.radius >= wave.maxRadius || wave.life <= 0) {
           container.removeChild(wave.graphics);
           wave.graphics.destroy();
           impactWaves.splice(index, 1);
         }
+      }
+
+      for (let index = burstEffects.length - 1; index >= 0; index -= 1) {
+        const effect = burstEffects[index];
+        effect.age += delta;
+        const progress = effect.age / effect.lifespan;
+
+        if (progress >= 1) {
+          container.removeChild(effect.container);
+          effect.container.destroy({ children: true });
+          burstEffects.splice(index, 1);
+          continue;
+        }
+
+        effect.flash.scale.set(Math.max(0.1, 1 - progress));
+        effect.flash.alpha = Math.max(0, 1 - progress);
+
+        const waveScale = 1 + progress * 11;
+        effect.wave.scale.set(waveScale, waveScale * 0.9);
+        effect.wave.alpha = Math.max(0, Math.sin(progress * Math.PI));
+
+        effect.sparks.forEach((spark) => {
+          const travel = spark.speed * effect.age;
+          spark.element.x = Math.cos(spark.angle) * travel;
+          spark.element.y = Math.sin(spark.angle) * travel;
+          spark.element.alpha = Math.max(0, 1 - progress);
+          spark.element.scale.x = 1 + progress * 2.5;
+        });
       }
 
       for (let index = impactParticles.length - 1; index >= 0; index -= 1) {
@@ -568,6 +622,29 @@ export default function App() {
           particle.sprite.destroy();
           impactParticles.splice(index, 1);
         }
+      }
+
+      for (let index = normalHitRings.length - 1; index >= 0; index -= 1) {
+        const ring = normalHitRings[index];
+        ring.age += delta;
+        const progress = ring.age / ring.lifespan;
+
+        if (progress >= 1) {
+          container.removeChild(ring.graphics);
+          ring.graphics.destroy();
+          normalHitRings.splice(index, 1);
+          continue;
+        }
+
+        const alpha = Math.max(0, 1 - progress);
+        const radius = ring.baseRadius + progress * ring.expandDistance;
+        ring.graphics.clear();
+        ring.graphics.circle(0, 0, radius);
+        ring.graphics.stroke({
+          color: 0xffffff,
+          width: Math.max(1.5, ring.strokeWidth * alpha),
+          alpha,
+        });
       }
     }
 
@@ -729,30 +806,31 @@ export default function App() {
 
       for (let index = particles.length - 1; index >= 0; index -= 1) {
         const particle = particles[index];
+        const scaleMultiplier = particle.scaleMultiplier || 1;
         particle.sprite.x += particle.vx * delta;
         particle.sprite.y += particle.vy * delta;
         particle.life -= particle.decay * delta;
 
         if (particle.type === "flash") {
-          particle.sprite.scale.set((1 - particle.life) * 8);
+          particle.sprite.scale.set((1 - particle.life) * 8 * scaleMultiplier);
           particle.sprite.alpha = particle.life;
         } else if (particle.type === "fire" || particle.type === "yellow") {
           particle.vx *= 0.93;
           particle.vy *= 0.93;
           particle.vy -= 0.05 * delta;
-          particle.sprite.scale.set(particle.life * 4);
+          particle.sprite.scale.set(particle.life * 4 * scaleMultiplier);
           particle.sprite.alpha = particle.life;
         } else if (particle.type === "spark") {
           particle.vx *= 0.96;
           particle.vy *= 0.96;
           particle.vy += 0.02 * delta;
-          particle.sprite.scale.set(particle.life * 1.5);
+          particle.sprite.scale.set(particle.life * 1.5 * scaleMultiplier);
           particle.sprite.alpha = particle.life;
         } else if (particle.type === "smoke") {
           particle.vx *= 0.9;
           particle.vy *= 0.9;
           particle.vy -= 0.08 * delta;
-          particle.sprite.scale.set((1 - particle.life) * 5 + 1.5);
+          particle.sprite.scale.set(((1 - particle.life) * 5 + 1.5) * scaleMultiplier);
           particle.sprite.alpha = particle.life * 0.4;
         }
 
@@ -808,6 +886,8 @@ export default function App() {
       meteorExplosion.particles = [];
       meteorExplosion.impactParticles = [];
       meteorExplosion.impactWaves = [];
+      meteorExplosion.burstEffects = [];
+      meteorExplosion.normalHitRings = [];
       meteorExplosion.auraParticles = [];
       meteorExplosion.auraSpawnCarryBySkill.breaker = 0;
       meteorExplosion.auraSpawnCarryBySkill.accelerate = 0;
@@ -851,6 +931,8 @@ export default function App() {
       meteorExplosion.particles = [];
       meteorExplosion.impactParticles = [];
       meteorExplosion.impactWaves = [];
+      meteorExplosion.burstEffects = [];
+      meteorExplosion.normalHitRings = [];
       meteorExplosion.auraParticles = [];
       meteorExplosion.auraSpawnCarryBySkill.breaker = 0;
       meteorExplosion.auraSpawnCarryBySkill.accelerate = 0;
@@ -893,6 +975,7 @@ export default function App() {
         life: 1,
         decay: Math.random() * (speedConfig.maxDecay - speedConfig.minDecay) + speedConfig.minDecay,
         type,
+        scaleMultiplier: METEOR_EFFECT_SIZE_MULTIPLIER,
       });
 
       container.addChild(sprite);
@@ -919,30 +1002,33 @@ export default function App() {
         life: 1,
         decay: 0.08,
         type: "flash",
+        scaleMultiplier: METEOR_EFFECT_SIZE_MULTIPLIER,
       });
 
       container.addChild(sprite);
     }
 
-    function spawnImpactWave(startX, startY, targetX, targetY) {
+    function spawnImpactWave(startX, startY, targetX, targetY, direction) {
       const container = meteorExplosion.container;
       if (!container) {
         return;
       }
 
-      const angle = Math.atan2(targetY - startY, targetX - startX);
       const graphics = new PIXI.Graphics();
       graphics.x = startX;
       graphics.y = startY;
-      graphics.rotation = angle;
+      const startAngle = direction === "left" ? Math.PI * 0.6 : -Math.PI * 0.4;
+      const endAngle = direction === "left" ? Math.PI * 1.4 : Math.PI * 0.4;
 
       meteorExplosion.impactWaves.push({
         graphics,
-        radiusX: 10,
-        radiusY: 5,
+        radius: 40,
+        width: 32,
+        startAngle,
+        endAngle,
         maxRadius: 320,
         life: 1,
-        decay: 0.03,
+        decay: 0.045,
       });
 
       container.addChild(graphics);
@@ -987,6 +1073,135 @@ export default function App() {
       container.addChild(sprite);
     }
 
+    function getNormalHitEffectPoint(actionKey) {
+      const arenaRect = elements.arena?.getBoundingClientRect();
+      const fighterRect = elements.fighterWrap?.getBoundingClientRect();
+      const targetRect = elements.targetWrap?.getBoundingClientRect();
+      if (!arenaRect || !fighterRect) {
+        return null;
+      }
+
+      const fighterCenterX = getCurrentFighterCenterX();
+      const targetCenterX = targetRect
+        ? targetRect.left - arenaRect.left + targetRect.width * 0.5
+        : fighterCenterX;
+      const facingRight = fighterCenterX <= targetCenterX;
+      const isKick = actionKey === "kick";
+
+      // Place VFX near the active limb contact zone, not at body center.
+      const xRatio = isKick
+        ? facingRight
+          ? 0.9
+          : 0.1
+        : facingRight
+          ? 0.8
+          : 0.2;
+      const yRatio = isKick ? 0.66 : 0.56;
+      const reachBoostPx = isKick ? fighterRect.width * 0.06 : fighterRect.width * 0.035;
+      const direction = facingRight ? 1 : -1;
+
+      return {
+        x: fighterRect.left - arenaRect.left + fighterRect.width * xRatio + reachBoostPx * direction,
+        y: fighterRect.top - arenaRect.top + fighterRect.height * yRatio,
+      };
+    }
+
+    function triggerNormalHitPixiEffect(actionKey) {
+      if (!meteorExplosion.container) {
+        initMeteorExplosionLayer()
+          .then(() => {
+            syncMeteorExplosionLayerSize();
+            triggerNormalHitPixiEffect(actionKey);
+          })
+          .catch(() => {
+            // Ignore renderer initialization failures.
+          });
+        return;
+      }
+
+      const hitPoint = getNormalHitEffectPoint(actionKey) || getAttackPoint(actionKey) || {
+        x: (elements.arena?.clientWidth || 0) * 0.52,
+        y: (elements.arena?.clientHeight || 0) * 0.56,
+      };
+
+      const ring = new PIXI.Graphics();
+      ring.x = hitPoint.x;
+      ring.y = hitPoint.y;
+      meteorExplosion.normalHitRings.push({
+        graphics: ring,
+        age: 0,
+        lifespan: 18,
+        baseRadius: 16,
+        expandDistance: 64,
+        strokeWidth: 8,
+      });
+      meteorExplosion.container.addChild(ring);
+
+      if (elements.arena) {
+        elements.arena.animate(
+          [
+            { transform: "translateX(0px) translateY(0px) scale(1)" },
+            { transform: "translateX(-7px) translateY(4px) scale(1.06)" },
+            { transform: "translateX(6px) translateY(-4px) scale(1.03)" },
+            { transform: "translateX(-3px) translateY(2px) scale(1.015)" },
+            { transform: "translateX(0px) translateY(0px) scale(1)" },
+          ],
+          { duration: 210, easing: "cubic-bezier(0.16, 0.74, 0.2, 1)" },
+        );
+      }
+    }
+
+    function triggerImpactBurstCoreEffect(x, y, direction) {
+      const container = meteorExplosion.container;
+      if (!container) {
+        return;
+      }
+
+      const effectContainer = new PIXI.Container();
+      effectContainer.position.set(x, y);
+      container.addChild(effectContainer);
+
+      const flash = new PIXI.Graphics();
+      flash.circle(0, 0, 50);
+      flash.fill({ color: 0xffffff });
+      effectContainer.addChild(flash);
+
+      const wave = new PIXI.Graphics();
+      const startAngle = direction === "left" ? Math.PI * 0.6 : -Math.PI * 0.4;
+      const endAngle = direction === "left" ? Math.PI * 1.4 : Math.PI * 0.4;
+      wave.arc(0, 0, 40, startAngle, endAngle);
+      wave.stroke({ color: 0x8b0000, width: 32, cap: "round" });
+      effectContainer.addChild(wave);
+
+      const sparks = [];
+      for (let index = 0; index < 16; index += 1) {
+        const sparkGraphic = new PIXI.Graphics();
+        let angle = (Math.random() - 0.5) * (Math.PI * 0.7);
+        if (direction === "left") {
+          angle += Math.PI;
+        }
+
+        const speed = Math.random() * 12 + 8;
+        const length = Math.random() * 40 + 20;
+        const sparkColor = Math.random() > 0.3 ? 0xff0033 : 0xffffff;
+        sparkGraphic.moveTo(0, 0);
+        sparkGraphic.lineTo(length, 0);
+        sparkGraphic.stroke({ color: sparkColor, width: 3.5 });
+        sparkGraphic.rotation = angle;
+        effectContainer.addChild(sparkGraphic);
+        sparks.push({ element: sparkGraphic, speed, angle });
+      }
+
+      meteorExplosion.burstEffects.push({
+        container: effectContainer,
+        flash,
+        wave,
+        sparks,
+        age: 0,
+        lifespan: 25,
+      });
+    }
+
     function getImpactBurstTargetPoint() {
       const arenaRect = elements.arena?.getBoundingClientRect();
       const targetRect = elements.targetWrap?.getBoundingClientRect();
@@ -1026,6 +1241,9 @@ export default function App() {
         y: (elements.arena?.clientHeight || 0) * 0.58,
       };
       const targetPoint = getImpactBurstTargetPoint();
+      const direction = startPoint.x <= targetPoint.x ? "right" : "left";
+
+      triggerImpactBurstCoreEffect(targetPoint.x, targetPoint.y, direction);
 
       if (meteorExplosion.impactWaveTimers.length > 0) {
         meteorExplosion.impactWaveTimers.forEach((timerId) => {
@@ -1037,21 +1255,21 @@ export default function App() {
       for (let index = 0; index < 3; index += 1) {
         const timerId = window.setTimeout(() => {
           meteorExplosion.impactWaveTimers = meteorExplosion.impactWaveTimers.filter((id) => id !== timerId);
-          spawnImpactWave(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y);
+          spawnImpactWave(targetPoint.x, targetPoint.y, startPoint.x, startPoint.y, direction);
         }, index * 80);
         meteorExplosion.impactWaveTimers.push(timerId);
       }
 
-      for (let index = 0; index < 40; index += 1) {
-        spawnImpactParticle(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y, textures.impactCyan, true);
+      for (let index = 0; index < 32; index += 1) {
+        spawnImpactParticle(targetPoint.x, targetPoint.y, startPoint.x, startPoint.y, textures.impactDarkRed, true);
       }
 
-      for (let index = 0; index < 25; index += 1) {
-        spawnImpactParticle(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y, textures.impactPurple, false);
+      for (let index = 0; index < 24; index += 1) {
+        spawnImpactParticle(targetPoint.x, targetPoint.y, startPoint.x, startPoint.y, textures.impactCrimson, false);
       }
 
-      for (let index = 0; index < 30; index += 1) {
-        spawnImpactParticle(startPoint.x, startPoint.y, targetPoint.x, targetPoint.y, textures.impactWhite, false);
+      for (let index = 0; index < 18; index += 1) {
+        spawnImpactParticle(targetPoint.x, targetPoint.y, startPoint.x, startPoint.y, textures.impactWhite, false);
       }
     }
 
@@ -1097,6 +1315,9 @@ export default function App() {
             // Ignore renderer initialization failures.
           });
       }
+      if (name !== "game") {
+        destroyVictoryCelebrationLayer();
+      }
       if (name !== "game" && elements.resultOverlay) {
         elements.resultOverlay.hidden = true;
       }
@@ -1107,6 +1328,7 @@ export default function App() {
       const stats = getCurrentCharacterBaseStats();
       const statsLabel = formatStatsLabel(stats);
       const availableSkillSet = getCharacterSkillSet(state.character);
+      const selectedCount = state.equippedSkillIds.length;
 
       elements.characterCards.forEach((card) => {
         card.classList.toggle("is-selected", card.dataset.character === state.character);
@@ -1129,8 +1351,13 @@ export default function App() {
       });
 
       if (elements.skillHint) {
-        const selectedCount = state.equippedSkillIds.length;
         elements.skillHint.textContent = `${selectedCount}/${MAX_EQUIPPED_SKILLS} equipped`;
+      }
+
+      if (elements.skillNext) {
+        const canAdvanceToStage = selectedCount >= 1;
+        elements.skillNext.disabled = !canAdvanceToStage;
+        elements.skillNext.title = canAdvanceToStage ? "" : "Equip at least 1 skill";
       }
 
       elements.stageCards.forEach((card) => {
@@ -1185,11 +1412,17 @@ export default function App() {
 
     function updateSkillButtons() {
       const now = performance.now();
+      const hasSecondSkill = Boolean(state.equippedSkillIds[1]);
 
       elements.skillButtons.forEach((button, slotIndex) => {
         if (!button) {
           return;
         }
+
+        const hideSecondSlot = slotIndex === 1 && !hasSecondSkill;
+        button.hidden = hideSecondSlot;
+        button.style.display = hideSecondSlot ? "none" : "";
+        button.setAttribute("aria-hidden", hideSecondSlot ? "true" : "false");
 
         const skillId = state.equippedSkillIds[slotIndex];
         const skill = skillId ? SKILLS_BY_ID[skillId] : null;
@@ -1201,8 +1434,10 @@ export default function App() {
         if (!skill || !runtime) {
           button.disabled = true;
           button.classList.remove("is-cooling", "is-active");
-          button.style.setProperty("--skill-cooldown-progress", "0%");
+          button.style.setProperty("--skill-cooldown-ratio", "0");
           if (iconEl) {
+            iconEl.classList.remove("has-icon");
+            iconEl.style.backgroundImage = "";
             iconEl.textContent = slotIndex === 0 ? "S1" : "S2";
           }
           if (nameEl) {
@@ -1222,10 +1457,18 @@ export default function App() {
         button.disabled = false;
         button.classList.toggle("is-cooling", remainingMs > 0);
         button.classList.toggle("is-active", active);
-        button.style.setProperty("--skill-cooldown-progress", `${Math.round(ratio * 100)}%`);
+        button.style.setProperty("--skill-cooldown-ratio", `${ratio.toFixed(4)}`);
 
         if (iconEl) {
-          iconEl.textContent = skill.icon || "SK";
+          if (skill.iconSrc) {
+            iconEl.classList.add("has-icon");
+            iconEl.style.backgroundImage = `url("${skill.iconSrc}")`;
+            iconEl.textContent = "";
+          } else {
+            iconEl.classList.remove("has-icon");
+            iconEl.style.backgroundImage = "";
+            iconEl.textContent = skill.icon || "SK";
+          }
         }
         if (nameEl) {
           nameEl.textContent = skill.name;
@@ -1272,9 +1515,180 @@ export default function App() {
         window.cancelAnimationFrame(state.frameId);
         state.frameId = null;
       }
+      destroyVictoryCelebrationLayer();
+      state.specialSkillSwapLockUntil = 0;
       state.meteorStrike.active = false;
       state.meteorStrike.impacted = false;
       setMeteorFlightVisualState(false);
+    }
+
+    async function initVictoryCelebrationLayer() {
+      if (!elements.appShell || victoryCelebration.app) {
+        return;
+      }
+
+      const token = victoryCelebration.initToken + 1;
+      victoryCelebration.initToken = token;
+
+      const app = new PIXI.Application();
+      await app.init({
+        width: Math.max(1, window.innerWidth || 1),
+        height: Math.max(1, window.innerHeight || 1),
+        backgroundAlpha: 0,
+        antialias: true,
+        autoDensity: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        resizeTo: window,
+      });
+
+      if (victoryCelebration.initToken !== token) {
+        app.destroy(true);
+        return;
+      }
+
+      const canvas = app.canvas || app.view;
+      if (!canvas) {
+        app.destroy(true);
+        return;
+      }
+
+      if (elements.appShell) {
+        const appShellStyle = window.getComputedStyle(elements.appShell);
+        if (appShellStyle.position === "static") {
+          elements.appShell.style.position = "relative";
+        }
+      }
+
+      canvas.classList.add("victory-pixi-layer");
+      canvas.style.position = "absolute";
+      canvas.style.inset = "0";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.style.pointerEvents = "none";
+      canvas.style.zIndex = "24";
+      elements.appShell.appendChild(canvas);
+
+      const fireworkContainer = new PIXI.Container();
+      const confettiContainer = new PIXI.Container();
+      app.stage.addChild(fireworkContainer, confettiContainer);
+
+      victoryCelebration.app = app;
+      victoryCelebration.fireworkContainer = fireworkContainer;
+      victoryCelebration.confettiContainer = confettiContainer;
+      victoryCelebration.confettiParticles = [];
+      victoryCelebration.fireworkRockets = [];
+      victoryCelebration.fireworkShards = [];
+      victoryCelebration.fireworkTimer = 0;
+
+      app.ticker.add((ticker) => {
+        const delta = ticker.deltaTime;
+        const colors = [0xff0055, 0x00ffcc, 0xffcc00, 0xff6600, 0x99ff00, 0xcc00ff, 0xffffff];
+
+        if (Math.random() < 0.15 * delta) {
+          const confetti = new PIXI.Graphics();
+          const width = Math.random() * 6 + 6;
+          const height = Math.random() * 10 + 6;
+          confetti.rect(-width / 2, -height / 2, width, height);
+          confetti.fill({ color: colors[Math.floor(Math.random() * colors.length)] });
+          confetti.position.set(Math.random() * app.screen.width, -20);
+          confetti.vx = (Math.random() - 0.5) * 4;
+          confetti.vy = Math.random() * 3 + 2;
+          confetti.rotationSpeed = (Math.random() - 0.5) * 0.2;
+          confetti.wobbleSpeed = Math.random() * 0.05 + 0.02;
+          confettiContainer.addChild(confetti);
+          victoryCelebration.confettiParticles.push(confetti);
+        }
+
+        victoryCelebration.fireworkTimer += delta;
+        if (victoryCelebration.fireworkTimer > 40) {
+          const rocket = new PIXI.Graphics();
+          rocket.circle(0, 0, 3);
+          rocket.fill({ color: 0xffffff });
+          const startX = Math.random() * (app.screen.width * 0.6) + app.screen.width * 0.2;
+          rocket.position.set(startX, app.screen.height);
+          rocket.targetY = Math.random() * (app.screen.height * 0.4) + app.screen.height * 0.1;
+          const distanceY = rocket.targetY - app.screen.height;
+          rocket.vy = -Math.sqrt(2 * 0.15 * Math.abs(distanceY));
+          rocket.gravity = 0.15;
+          fireworkContainer.addChild(rocket);
+          victoryCelebration.fireworkRockets.push(rocket);
+          victoryCelebration.fireworkTimer = 0;
+        }
+
+        for (let index = victoryCelebration.confettiParticles.length - 1; index >= 0; index -= 1) {
+          const confetti = victoryCelebration.confettiParticles[index];
+          confetti.position.x += confetti.vx * delta;
+          confetti.position.y += confetti.vy * delta;
+          confetti.rotation += confetti.rotationSpeed * delta;
+          confetti.scale.x = Math.cos(app.ticker.lastTime * confetti.wobbleSpeed);
+
+          if (confetti.position.y > app.screen.height + 20) {
+            confettiContainer.removeChild(confetti);
+            confetti.destroy();
+            victoryCelebration.confettiParticles.splice(index, 1);
+          }
+        }
+
+        for (let index = victoryCelebration.fireworkRockets.length - 1; index >= 0; index -= 1) {
+          const rocket = victoryCelebration.fireworkRockets[index];
+          rocket.vy += rocket.gravity * delta;
+          rocket.position.y += rocket.vy * delta;
+
+          if (rocket.vy >= -0.5) {
+            const shardCount = 60;
+            const baseColor = colors[Math.floor(Math.random() * colors.length)];
+            for (let shardIndex = 0; shardIndex < shardCount; shardIndex += 1) {
+              const shard = new PIXI.Graphics();
+              shard.circle(0, 0, Math.random() * 2 + 1.5);
+              shard.fill({ color: baseColor });
+              shard.position.set(rocket.position.x, rocket.position.y);
+              const angle = Math.random() * Math.PI * 2;
+              const speed = Math.random() * 6 + 2;
+              shard.vx = Math.cos(angle) * speed;
+              shard.vy = Math.sin(angle) * speed;
+              shard.gravity = 0.08;
+              shard.alpha = 1;
+              shard.fade = Math.random() * 0.015 + 0.01;
+              fireworkContainer.addChild(shard);
+              victoryCelebration.fireworkShards.push(shard);
+            }
+            fireworkContainer.removeChild(rocket);
+            rocket.destroy();
+            victoryCelebration.fireworkRockets.splice(index, 1);
+          }
+        }
+
+        for (let index = victoryCelebration.fireworkShards.length - 1; index >= 0; index -= 1) {
+          const shard = victoryCelebration.fireworkShards[index];
+          shard.vy += shard.gravity * delta;
+          shard.position.x += shard.vx * delta;
+          shard.position.y += shard.vy * delta;
+          shard.alpha -= shard.fade * delta;
+
+          if (shard.alpha <= 0) {
+            fireworkContainer.removeChild(shard);
+            shard.destroy();
+            victoryCelebration.fireworkShards.splice(index, 1);
+          }
+        }
+
+      });
+    }
+
+    function destroyVictoryCelebrationLayer() {
+      victoryCelebration.initToken += 1;
+
+      if (victoryCelebration.app) {
+        victoryCelebration.app.destroy(true);
+      }
+
+      victoryCelebration.app = null;
+      victoryCelebration.fireworkContainer = null;
+      victoryCelebration.confettiContainer = null;
+      victoryCelebration.confettiParticles = [];
+      victoryCelebration.fireworkRockets = [];
+      victoryCelebration.fireworkShards = [];
+      victoryCelebration.fireworkTimer = 0;
     }
 
     function setMeteorFlightVisualState(active) {
@@ -1572,7 +1986,7 @@ export default function App() {
       return "jump";
     }
 
-    function getAttackPoint() {
+    function getAttackPoint(actionOverride = null) {
       const arenaRect = elements.arena?.getBoundingClientRect();
       const fighterRect = elements.fighterWrap?.getBoundingClientRect();
       const targetRect = elements.targetWrap?.getBoundingClientRect();
@@ -1580,11 +1994,12 @@ export default function App() {
         return null;
       }
 
-      const fighterCenterX = fighterRect.left - arenaRect.left + fighterRect.width * 0.5;
+      const actionForPoint = actionOverride || state.action;
+      const fighterCenterX = getCurrentFighterCenterX();
       const targetCenterX = targetRect
         ? targetRect.left - arenaRect.left + targetRect.width * 0.5
         : fighterCenterX;
-      const isCrouchPunch = state.action === "crouchPunch";
+      const isCrouchPunch = actionForPoint === "crouchPunch";
       const attackXRatio = isCrouchPunch
         ? fighterCenterX <= targetCenterX
           ? 0.68
@@ -1593,9 +2008,14 @@ export default function App() {
           ? 0.62
           : 0.38;
       const attackYRatio = state.airborne ? 0.35 : isCrouchPunch ? 0.7 : state.crouching ? 0.78 : 0.62;
+      const forwardDirection = fighterCenterX <= targetCenterX ? 1 : -1;
+      const isPunchAction = actionForPoint === "punch" || actionForPoint === "jumpPunch" || actionForPoint === "crouchPunch";
+      const isKickAction = actionForPoint === "kick" || actionForPoint === "jumpKick" || actionForPoint === "crouchKick";
+      const forwardLungePx = isKickAction ? 8 : isPunchAction ? 4 : 0;
+      const baseX = fighterRect.left - arenaRect.left + fighterRect.width * attackXRatio;
 
       return {
-        x: fighterRect.left - arenaRect.left + fighterRect.width * attackXRatio,
+        x: baseX + forwardLungePx * forwardDirection,
         y: fighterRect.top - arenaRect.top + fighterRect.height * attackYRatio,
       };
     }
@@ -1773,6 +2193,8 @@ export default function App() {
           }
           window.setTimeout(() => finishGame(true), 650);
         }
+
+        setSpecialSkillSwapLock(500);
       }, 400);
     }
 
@@ -1866,6 +2288,8 @@ export default function App() {
         spawnParticles(hitAnchors);
       }
 
+      setSpecialSkillSwapLock(500);
+
       if (state.targetHealth <= 0) {
         state.targetBroken = true;
         if (elements.targetObject) {
@@ -1897,6 +2321,18 @@ export default function App() {
       const now = performance.now();
       if (now < runtime.cooldownUntil) {
         return;
+      }
+
+      if (skillId === "meteorPunch") {
+        if (isSpecialSkillSwapLocked() || state.meteorStrike.active || state.action === "impactBurst" || state.impactBurstTimer) {
+          return;
+        }
+      }
+
+      if (skillId === "impactBurst") {
+        if (isSpecialSkillSwapLocked() || state.meteorStrike.active || state.action === "meteorPunch") {
+          return;
+        }
       }
 
       runtime.cooldownUntil = now + (skill.cooldownMs || 0);
@@ -2310,6 +2746,14 @@ export default function App() {
         }
         updateHud();
 
+        if (won) {
+          initVictoryCelebrationLayer().catch(() => {
+            // Ignore renderer initialization failures.
+          });
+        } else {
+          destroyVictoryCelebrationLayer();
+        }
+
         if (elements.resultOverlay) {
           elements.resultOverlay.hidden = false;
         }
@@ -2405,6 +2849,9 @@ export default function App() {
       state.combo += 1;
       updateHud();
       updateTargetVisual();
+      if ((mappedAction === "punch" || mappedAction === "kick") && actualDamageDone > 0) {
+        triggerNormalHitPixiEffect(mappedAction);
+      }
       flashHit();
       spawnParticles(hitAnchors);
       if (state.targetHealth <= 0) {
@@ -2562,6 +3009,7 @@ export default function App() {
       state.airborne = false;
       state.action = "idle";
       state.targetBroken = false;
+      state.specialSkillSwapLockUntil = 0;
       if (state.stage === "car") {
         state.carPartHealth = {
           leftDoor: CAR_PARTS.leftDoor.maxHealth,
@@ -2817,6 +3265,11 @@ export default function App() {
     }
 
     function goToStageSelection() {
+      if (state.equippedSkillIds.length < 1) {
+        setScreen("skill");
+        updateSelectionCards();
+        return;
+      }
       setScreen("stage");
       updateSelectionCards();
     }
@@ -3105,24 +3558,36 @@ export default function App() {
           <p className="selection-subtitle" id="skill-selection-hint">0/2 equipped</p>
           <div className="selection-grid skill-selection-grid" id="skill-grid">
             <button className="choice-card skill-card" data-skill="meteorPunch" type="button">
-              <strong>MP Meteor Punch</strong>
-              <span>Fly up and slam the roof.</span>
-              <small>AOE 20% damage to all. 12s cooldown.</small>
+              <img className="skill-card-icon" src="assets/skill-icons/meteor-punch.jpg" alt="Meteor Punch icon" />
+              <div className="skill-card-info">
+                <strong>Meteor Punch</strong>
+                <span>Fly up and slam the roof.</span>
+                <small>AOE 20% damage to all. 12s cooldown.</small>
+              </div>
             </button>
             <button className="choice-card skill-card" data-skill="breaker" type="button">
-              <strong>BR Breaker</strong>
-              <span>+15 Strength for 7s.</span>
-              <small>15s cooldown.</small>
+              <img className="skill-card-icon" src="assets/skill-icons/breaker.jpg" alt="Breaker icon" />
+              <div className="skill-card-info">
+                <strong>Breaker</strong>
+                <span>+15 Strength for 7s.</span>
+                <small>15s cooldown.</small>
+              </div>
             </button>
             <button className="choice-card skill-card" data-skill="accelerate" type="button">
-              <strong>AC Accelerate</strong>
-              <span>+30 Agility for 7s.</span>
-              <small>15s cooldown.</small>
+              <img className="skill-card-icon" src="assets/skill-icons/accelerate.jpg" alt="Accelerate icon" />
+              <div className="skill-card-info">
+                <strong>Accelerate</strong>
+                <span>+30 Agility for 7s.</span>
+                <small>15s cooldown.</small>
+              </div>
             </button>
             <button className="choice-card skill-card" data-skill="impactBurst" type="button">
-              <strong>IB Impact Burst</strong>
-              <span>AOE burst: near +22%.</span>
-              <small>Other hits +15%. 10s cooldown.</small>
+              <img className="skill-card-icon" src="assets/skill-icons/impact-burst.jpg" alt="Impact Burst icon" />
+              <div className="skill-card-info">
+                <strong>Impact Burst</strong>
+                <span>AOE burst: near +22%.</span>
+                <small>Other hits +15%. 10s cooldown.</small>
+              </div>
             </button>
           </div>
           <div className="screen-actions">
@@ -3188,30 +3653,41 @@ export default function App() {
               </div>
 
               <div className="controls-overlay">
-                <div className="dpad" aria-label="Direction controls">
-                  <span className="dpad-gap dpad-up-left" aria-hidden="true"></span>
-                  <button className="control-button dpad-up" data-action="jump" type="button">↑</button>
-                  <span className="dpad-gap dpad-up-right" aria-hidden="true"></span>
-                  <button className="control-button dpad-left" data-action="moveLeft" type="button">←</button>
-                  <div className="joystick-core" aria-hidden="true"></div>
-                  <button className="control-button dpad-right" data-action="moveRight" type="button">→</button>
-                  <span className="dpad-gap dpad-down-left" aria-hidden="true"></span>
-                  <button className="control-button dpad-down" data-action="crouch" type="button">↓</button>
-                  <span className="dpad-gap dpad-down-right" aria-hidden="true"></span>
+                <div className="left-controls">
+                  <div className="dpad" aria-label="Direction controls">
+                    <span className="dpad-gap dpad-up-left" aria-hidden="true"></span>
+                    <button className="control-button dpad-up" data-action="jump" type="button">↑</button>
+                    <span className="dpad-gap dpad-up-right" aria-hidden="true"></span>
+                    <button className="control-button dpad-left" data-action="moveLeft" type="button">←</button>
+                    <div className="joystick-core" aria-hidden="true"></div>
+                    <button className="control-button dpad-right" data-action="moveRight" type="button">→</button>
+                    <span className="dpad-gap dpad-down-left" aria-hidden="true"></span>
+                    <button className="control-button dpad-down" data-action="crouch" type="button">↓</button>
+                    <span className="dpad-gap dpad-down-right" aria-hidden="true"></span>
+                  </div>
                 </div>
-                <div className="action-pad" aria-label="Action controls">
-                  <button className="control-button action-punch" data-action="punch" type="button">Punch</button>
-                  <button className="control-button action-kick" data-action="kick" type="button">Kick</button>
-                  <button className="control-button action-skill" data-action="skill1" id="skill-slot-1" type="button">
-                    <span className="skill-slot-icon">S1</span>
-                    <span className="skill-slot-name">Empty</span>
-                    <span className="skill-slot-cd">Ready</span>
-                  </button>
-                  <button className="control-button action-skill" data-action="skill2" id="skill-slot-2" type="button">
-                    <span className="skill-slot-icon">S2</span>
-                    <span className="skill-slot-name">Empty</span>
-                    <span className="skill-slot-cd">Ready</span>
-                  </button>
+
+                <div className="right-controls">
+                  <div className="skill-stack" aria-label="Skill controls">
+                    <button className="control-button action-skill" data-action="skill1" id="skill-slot-1" type="button">
+                      <span className="skill-slot-icon">S1</span>
+                      <span className="skill-slot-name">Empty</span>
+                      <span className="skill-slot-cd">Ready</span>
+                    </button>
+                    <button className="control-button action-skill" data-action="skill2" id="skill-slot-2" type="button">
+                      <span className="skill-slot-icon">S2</span>
+                      <span className="skill-slot-name">Empty</span>
+                      <span className="skill-slot-cd">Ready</span>
+                    </button>
+                  </div>
+                  <div className="action-pad" aria-label="Action controls">
+                    <button className="control-button action-punch" data-action="punch" type="button" aria-label="Punch (P)">
+                      <span className="action-label">P</span>
+                    </button>
+                    <button className="control-button action-kick" data-action="kick" type="button" aria-label="Kick (K)">
+                      <span className="action-label">K</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
