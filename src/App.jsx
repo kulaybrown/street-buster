@@ -3516,8 +3516,8 @@ export default function App() {
             <p className="section-label">Bonus Stage</p>
             <h2>Smash the target before time runs out.</h2>
             <p className="lead">Choose your fighter, pick the stage, then punch and kick your way through the bonus round.</p>
-            <button className="primary-button start-button-text" id="start-button" type="button">
-              Start Game <span className="start-arrow">›</span>
+            <button className="start-button-text" id="start-button" type="button">
+              TAP TO START
             </button>
           </div>
         </section>
@@ -3545,8 +3545,8 @@ export default function App() {
             </div>
           </div>
           <div className="screen-actions">
-            <button className="secondary-button" id="character-back" type="button">Back</button>
-            <button className="primary-button" id="character-next" type="button">Next: Skills</button>
+            <button className="secondary-button nav-back-button" id="character-back" type="button">Back</button>
+            <button className="primary-button nav-next-button" id="character-next" type="button">Next: Skills</button>
           </div>
         </section>
 
@@ -3591,8 +3591,8 @@ export default function App() {
             </button>
           </div>
           <div className="screen-actions">
-            <button className="secondary-button" id="skill-back" type="button">Back</button>
-            <button className="primary-button" id="skill-next" type="button">Next: Stage</button>
+            <button className="secondary-button nav-back-button" id="skill-back" type="button">Back</button>
+            <button className="primary-button nav-next-button" id="skill-next" type="button">Next: Stage</button>
           </div>
         </section>
 
@@ -3612,24 +3612,21 @@ export default function App() {
             </div>
             <div className="selection-grid stage-grid stage-selection-grid" id="stage-grid">
               <button className="choice-card is-selected" data-stage="car" type="button">
-                <div className="stage-preview stage-preview-car">
-                  <div className="stage-preview-car-body"></div>
-                  <div className="stage-preview-car-roof"></div>
-                  <div className="stage-preview-car-wheel left"></div>
-                  <div className="stage-preview-car-wheel right"></div>
+                <div className="stage-preview stage-preview-image-wrap">
+                  <img className="stage-preview-image" src="assets/stages/stage-car-img.png" alt="Car stage preview" />
                 </div>
                 <span>Car</span>
               </button>
               <button className="choice-card" data-stage="wooden-box" type="button">
-                <div className="stage-preview stage-preview-box">
-                  <div className="crate-preview"></div>
+                <div className="stage-preview stage-preview-image-wrap">
+                  <img className="stage-preview-image" src="assets/stages/stage-woodbox-img.png" alt="Wooden box stage preview" />
                 </div>
                 <span>Wooden Box</span>
               </button>
             </div>
           </div>
           <div className="screen-actions">
-            <button className="secondary-button" id="stage-back" type="button">Back</button>
+            <button className="secondary-button nav-back-button" id="stage-back" type="button">Back</button>
             <button className="primary-button" id="stage-start" type="button">Start Fight</button>
           </div>
         </section>
