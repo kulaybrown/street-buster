@@ -1114,6 +1114,7 @@ h2 {
   object-fit: contain;
   image-rendering: pixelated;
   background: transparent;
+  display: block;
 }
 
 .stage-preview::before {
@@ -2145,6 +2146,10 @@ h2 {
     gap: 6px;
   }
 
+  .selection-screen {
+    gap: 14px;
+  }
+
   .score-pill {
     font-size: 0.62rem;
   }
@@ -2166,10 +2171,19 @@ h2 {
   #screen-character,
   #screen-skill,
   #screen-stage {
-    height: clamp(480px, 74vh, 600px);
+    height: auto;
+    min-height: calc(100dvh - 32px);
     max-height: calc(100dvh - 32px);
     padding: 14px;
     border-width: 9px;
+  }
+
+  .panel-head,
+  .panel-head-centered,
+  #screen-skill .panel-head,
+  #screen-stage .panel-head {
+    width: 100%;
+    max-width: none;
   }
 
   .screen-character .selection-title {
@@ -2189,15 +2203,36 @@ h2 {
 
   .skill-selection-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .character-selection-layout,
+  .stage-selection-layout,
   .stage-selected-character {
     grid-template-columns: 1fr;
   }
 
+  .character-selection-layout,
   .stage-selection-layout {
-    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .character-preview-panel,
+  .stage-selected-character {
+    width: 100%;
+    min-height: auto;
+    padding: 12px;
+  }
+
+  .character-selection-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .stage-selected-character {
@@ -2216,6 +2251,13 @@ h2 {
   .screen-actions > *,
   .result-actions > * {
     width: 100%;
+  }
+
+  #character-next,
+  #skill-next,
+  #stage-start {
+    min-width: 0;
+    text-align: center;
   }
 
   .fighter-wrap {
@@ -2307,17 +2349,11 @@ h2 {
 
 @media (max-width: 900px) and (orientation: portrait) {
   .app-shell {
-    visibility: hidden;
+    visibility: visible;
   }
 
   .orientation-lock {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    background: rgba(5, 6, 10, 0.92);
+    display: none;
   }
 }
 
@@ -2340,7 +2376,8 @@ h2 {
   #screen-character,
   #screen-skill,
   #screen-stage {
-    height: calc(100dvh - 20px);
+    height: auto;
+    min-height: calc(100dvh - 20px);
     max-height: calc(100dvh - 20px);
     padding: 12px;
     border-width: 6px;
@@ -2354,16 +2391,48 @@ h2 {
     letter-spacing: 0.8px;
   }
 
+  #screen-skill .panel-head,
+  #screen-stage .panel-head {
+    margin-bottom: 8px;
+    padding: 2px 4px 6px;
+  }
+
+  #screen-skill .panel-head::before,
+  #screen-stage .panel-head::before {
+    left: 10%;
+    right: 10%;
+    top: -2px;
+    height: 42px;
+  }
+
+  #screen-skill .selection-title,
+  #screen-stage .selection-title {
+    font-size: clamp(0.98rem, 5.6vw, 1.28rem);
+    letter-spacing: 0.6px;
+    line-height: 1.15;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  #screen-skill .selection-subtitle,
+  #screen-stage #stage-character-label {
+    margin-top: 6px;
+    font-size: clamp(0.48rem, 2.8vw, 0.66rem);
+    line-height: 1.35;
+  }
+
   #character-next,
   #skill-next {
     min-width: 176px;
-    padding-left: 46px;
+    padding-left: 14px;
+    padding-right: 14px;
     font-size: 0.62rem;
+    text-align: center;
   }
 
   #character-next::before,
   #skill-next::before {
-    width: 30px;
+    width: 0;
   }
 
   .pill {
@@ -2381,23 +2450,25 @@ h2 {
   }
 
   .character-selection-layout {
-    grid-template-columns: minmax(120px, 0.88fr) minmax(0, 1.12fr);
+    grid-template-columns: 1fr;
     gap: 12px;
     align-items: start;
   }
 
   .stage-selection-layout {
-    grid-template-columns: minmax(120px, 0.88fr) minmax(0, 1.12fr);
+    grid-template-columns: 1fr;
   }
 
   .character-preview-panel {
     gap: 8px;
     align-content: start;
-    padding-top: 8px;
+    padding: 10px 8px;
   }
 
-  .character-preview-sprite {
-    width: min(100%, 140px);
+  .character-preview-sprite,
+  .stage-character-sprite {
+    width: min(100%, 110px);
+    max-width: 100%;
   }
 
   .character-selection-grid {
@@ -2413,6 +2484,7 @@ h2 {
   .character-choice-image {
     width: min(78%, 72px);
     height: min(78%, 72px);
+    max-width: 100%;
   }
 
   .choice-card {
@@ -2424,16 +2496,53 @@ h2 {
   .choice-card img {
     width: min(100%, 180px);
     border-radius: 16px;
+    max-width: 100%;
+    height: auto;
   }
 
   .stage-grid .choice-card {
-    min-height: 154px;
+    min-height: 148px;
     padding: 10px;
   }
 
   .stage-preview {
-    width: min(100%, 132px);
-    height: 92px;
+    width: min(100%, 120px);
+    height: 84px;
+  }
+
+  .stage-preview-image,
+  .skill-card-icon {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .stage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .skill-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+    min-height: 116px;
+    min-width: 0;
+  }
+
+  .skill-card-info {
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .skill-card strong {
+    font-size: 0.58rem;
+    line-height: 1.35;
+  }
+
+  .skill-card span {
+    font-size: 0.9rem;
+  }
+
+  .skill-card small {
+    font-size: 0.82rem;
   }
 
   .hero-card {
@@ -2459,6 +2568,7 @@ h2 {
     grid-template-columns: 84px minmax(0, 1fr);
     gap: 12px;
     justify-items: start;
+    padding: 10px 8px;
   }
 
   .stage-selected-character > div {
