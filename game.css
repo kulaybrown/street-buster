@@ -139,17 +139,24 @@ button {
   gap: 10px;
 }
 
-#hud-score {
+.score-stack-left {
   justify-self: start;
+  display: grid;
+  gap: 4px;
 }
 
-#hud-high-score {
-  justify-self: end;
-  text-align: right;
+.score-stack-left #hud-score,
+.score-stack-left #hud-high-score {
+  text-align: left;
 }
 
 .score-row .timer-pill {
   justify-self: center;
+}
+
+#hud-gold {
+  justify-self: end;
+  text-align: right;
 }
 
 .score-pill {
@@ -157,6 +164,36 @@ button {
   font-size: 0.72rem;
   line-height: 1.4;
   color: #ffe9b3;
+}
+
+.gold-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 214, 104, 0.55);
+  background: linear-gradient(180deg, rgba(98, 68, 18, 0.78), rgba(53, 33, 8, 0.86));
+  color: #ffd45c;
+  text-shadow: 0 0 8px rgba(255, 209, 88, 0.25);
+}
+
+.gold-pill strong {
+  color: #ffea99;
+  font-size: 0.84rem;
+}
+
+.gold-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: radial-gradient(circle at 28% 26%, #fff8cf, #f7be34 58%, #9a6516 100%);
+  border: 1px solid rgba(255, 236, 165, 0.8);
+  color: #513200;
+  font-size: 0.66rem;
+  line-height: 1;
 }
 
 .fight-row {
@@ -305,11 +342,25 @@ h2 {
 #screen-character,
 #screen-skill,
 #screen-stage {
-  position: relative;
   width: min(980px, 100%);
+  height: auto;
+  max-height: none;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  padding: 15px;
+}
+
+#screen-character .selection-frame,
+#screen-skill .selection-frame,
+#screen-stage .selection-frame {
+  position: relative;
   height: clamp(500px, 78vh, 640px);
   max-height: calc(100dvh - 44px);
-  margin: 0 auto;
   padding: 30px;
   border: 12px solid #8595b0;
   border-radius: 20px;
@@ -326,14 +377,13 @@ h2 {
   overscroll-behavior: contain;
 }
 
-#screen-character::before,
-#screen-skill::before,
-#screen-stage::before {
+#screen-character .selection-frame::before,
+#screen-skill .selection-frame::before,
+#screen-stage .selection-frame::before {
   content: "";
   position: absolute;
   inset: 12px;
   border-radius: 14px;
-  border: 2px solid rgba(220, 236, 255, 0.24);
   box-shadow:
     inset 0 0 0 1px rgba(36, 47, 68, 0.75),
     inset 0 0 14px rgba(0, 0, 0, 0.35);
@@ -395,6 +445,10 @@ h2 {
 }
 
 #screen-stage {
+  background: none;
+}
+
+#screen-stage .selection-frame {
   background:
     repeating-linear-gradient(0deg, rgba(88, 125, 186, 0.16) 0 1px, rgba(0, 0, 0, 0) 1px 26px),
     repeating-linear-gradient(90deg, rgba(88, 125, 186, 0.14) 0 1px, rgba(0, 0, 0, 0) 1px 26px),
@@ -482,6 +536,10 @@ h2 {
 }
 
 #screen-skill {
+  background: none;
+}
+
+#screen-skill .selection-frame {
   background:
     radial-gradient(circle at 50% 8%, rgba(255, 163, 67, 0.17), rgba(255, 163, 67, 0) 26%),
     repeating-linear-gradient(0deg, rgba(88, 125, 186, 0.2) 0 1px, rgba(0, 0, 0, 0) 1px 26px),
@@ -537,6 +595,10 @@ h2 {
   font-family: "Press Start 2P", monospace;
   font-size: clamp(0.6rem, 1.2vw, 0.88rem);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.9);
+}
+
+#screen-skill .selection-subtitle .skill-hint-gold {
+  color: #ffcf58;
 }
 
 .selection-subtitle {
@@ -973,6 +1035,8 @@ h2 {
   min-height: 138px;
   gap: 0;
   padding: 0;
+  position: relative;
+  overflow: hidden;
 }
 
 .skill-card-info {
@@ -980,6 +1044,7 @@ h2 {
   align-content: center;
   gap: 8px;
   padding: 14px;
+  z-index: 1;
 }
 
 .skill-card-icon {
@@ -1008,6 +1073,41 @@ h2 {
   color: var(--muted);
 }
 
+.skill-price {
+  color: #ffd678;
+  font-weight: 700;
+}
+
+.skill-price::before {
+  content: "$ ";
+  color: #ffdf7b;
+}
+
+.skill-buy-button {
+  justify-self: stretch;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(255, 226, 132, 0.65);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #f4bf35, #bf7a0a);
+  color: #221200;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.66rem;
+  padding: 10px 12px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 249, 209, 0.6);
+}
+
+.skill-buy-button:hover {
+  filter: brightness(1.06);
+}
+
+.skill-buy-button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  filter: saturate(0.55) brightness(0.86);
+}
+
 .skill-card.is-selected {
   border-color: rgba(118, 215, 255, 0.9);
   box-shadow: 0 0 0 2px rgba(118, 215, 255, 0.26), var(--shadow);
@@ -1015,6 +1115,25 @@ h2 {
 
 .skill-card.is-disabled {
   opacity: 0.45;
+}
+
+.skill-card.is-locked {
+  border-color: rgba(255, 118, 118, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(255, 118, 118, 0.25);
+}
+
+.skill-card.is-locked .skill-card-icon {
+  filter: grayscale(1) brightness(0.58) contrast(0.9);
+}
+
+.skill-card.is-locked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(135deg, rgba(0, 0, 0, 0) 0 12px, rgba(255, 117, 117, 0.15) 12px 14px),
+    linear-gradient(180deg, rgba(22, 8, 8, 0.18), rgba(12, 5, 5, 0.52));
+  pointer-events: none;
 }
 
 .stage-selected-character {
@@ -1046,10 +1165,10 @@ h2 {
   background: #11141c;
   color: var(--text);
   display: grid;
-  gap: 14px;
   justify-items: center;
   padding: 0px;
   text-align: center;
+  position: relative;
 }
 
 .choice-card img {
@@ -1071,8 +1190,7 @@ h2 {
 }
 
 .stage-grid .choice-card {
-  min-height: 210px;
-  padding: 14px;
+  padding: 10px;
   background: #1c2231;
 }
 
@@ -1098,8 +1216,10 @@ h2 {
 
 .stage-grid .choice-card span {
   font-family: "Press Start 2P", monospace;
-  font-size: 0.88rem;
+  font-size: 0.60rem;
   line-height: 1.4;
+  position: absolute;
+  bottom: 10px;
 }
 
 .stage-preview-image-wrap {
@@ -1257,7 +1377,6 @@ h2 {
 
 .screen-actions {
   justify-content: space-between;
-  margin-top: auto;
 }
 
 #screen-character .screen-actions .secondary-button,
@@ -2154,6 +2273,17 @@ h2 {
     font-size: 0.62rem;
   }
 
+  .gold-pill {
+    padding: 5px 8px;
+    gap: 5px;
+  }
+
+  .gold-icon {
+    width: 16px;
+    height: 16px;
+    font-size: 0.58rem;
+  }
+
   .timer-pill {
     min-width: 54px;
     font-size: 0.88rem;
@@ -2168,9 +2298,9 @@ h2 {
     padding: 18px;
   }
 
-  #screen-character,
-  #screen-skill,
-  #screen-stage {
+  #screen-character .selection-frame,
+  #screen-skill .selection-frame,
+  #screen-stage .selection-frame {
     height: auto;
     min-height: calc(100dvh - 32px);
     max-height: calc(100dvh - 32px);
@@ -2368,14 +2498,27 @@ h2 {
     margin-bottom: 8px;
   }
 
+  .score-row {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .score-stack-left {
+    gap: 2px;
+  }
+
+  .gold-pill span {
+    display: none;
+  }
+
   .screen {
     border-radius: 22px;
     padding: 14px;
   }
 
-  #screen-character,
-  #screen-skill,
-  #screen-stage {
+  #screen-character .selection-frame,
+  #screen-skill .selection-frame,
+  #screen-stage .selection-frame {
     height: auto;
     min-height: calc(100dvh - 20px);
     max-height: calc(100dvh - 20px);

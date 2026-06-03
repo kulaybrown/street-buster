@@ -31,7 +31,7 @@ const SPRITES = {
 };
 
 const CHARACTER_LABELS = {
-  default: "Default",
+  default: "Hero",
   "female-hulk": "Female Hulk",
 };
 
@@ -65,6 +65,7 @@ const SKILLS_BY_ID = {
     type: "active",
     durationMs: 0,
     cooldownMs: 12000,
+    unlockGold: 1500,
   },
   breaker: {
     id: "breaker",
@@ -76,6 +77,7 @@ const SKILLS_BY_ID = {
     strengthBonus: 15,
     durationMs: 7000,
     cooldownMs: 15000,
+    unlockGold: 0,
   },
   accelerate: {
     id: "accelerate",
@@ -87,6 +89,7 @@ const SKILLS_BY_ID = {
     agilityBonus: 30,
     durationMs: 7000,
     cooldownMs: 15000,
+    unlockGold: 500,
   },
   impactBurst: {
     id: "impactBurst",
@@ -97,11 +100,12 @@ const SKILLS_BY_ID = {
     type: "active",
     cooldownMs: 10000,
     durationMs: 0,
+    unlockGold: 1000,
   },
 };
 
 const CHARACTER_SKILLS = {
-  default: ["meteorPunch", "breaker", "accelerate", "impactBurst"],
+  default: ["breaker", "accelerate", "impactBurst", "meteorPunch"],
   "female-hulk": [],
 };
 
@@ -159,7 +163,13 @@ const CHARACTER_TARGET_SCALE = {
 };
 
 const END_ROUND_DELAY_MS = 3000;
+const INFINITE_TIMER_MODE = true;
 const METEOR_EFFECT_SIZE_MULTIPLIER = 2;
+const STORAGE_KEYS = {
+  highScore: "streetBuster.highScore",
+  gold: "streetBuster.gold",
+  unlockedSkills: "streetBuster.unlockedSkills",
+};
 
 function getDamageTier(health, maxHealth) {
   if (health <= 0) {
@@ -233,11 +243,13 @@ export default function App() {
       screen: "start",
       character: "default",
       equippedSkillIds: [],
+      gold: 0,
+      unlockedSkillIds: new Set(["breaker"]),
       stage: "car",
       score: 0,
       highScore: 0,
       combo: 0,
-      timeLeft: 60,
+      timeLeft: 0,
       running: false,
       crouching: false,
       airborne: false,
@@ -340,10 +352,26 @@ export default function App() {
 
     const getCharacterSkillSet = (character) => new Set(getCharacterSkillIds(character));
 
+    const getSkillUnlockCost = (skillId) => {
+      const unlockCost = SKILLS_BY_ID[skillId]?.unlockGold;
+      return Number.isFinite(unlockCost) && unlockCost > 0 ? Math.floor(unlockCost) : 0;
+    };
+
+    const isSkillUnlocked = (skillId) => getSkillUnlockCost(skillId) === 0 || state.unlockedSkillIds.has(skillId);
+
+    const saveProgress = () => {
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.gold, String(Math.max(0, Math.floor(state.gold))));
+        window.localStorage.setItem(STORAGE_KEYS.unlockedSkills, JSON.stringify(Array.from(state.unlockedSkillIds)));
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+
     const sanitizeEquippedSkills = () => {
       const allowed = getCharacterSkillSet(state.character);
       state.equippedSkillIds = state.equippedSkillIds
-        .filter((skillId) => allowed.has(skillId))
+        .filter((skillId) => allowed.has(skillId) && isSkillUnlocked(skillId))
         .slice(0, MAX_EQUIPPED_SKILLS);
     };
 
@@ -470,6 +498,8 @@ export default function App() {
       hudStage: q("#hud-stage"),
       hudScore: q("#hud-score"),
       hudHighScore: q("#hud-high-score"),
+      hudGold: q("#hud-gold"),
+      hudGoldValue: q("#hud-gold-value"),
       hudTime: q("#hud-time"),
       targetHitFlash: q("#target-hit-flash"),
       targetParticles: q("#target-particles"),
@@ -1343,15 +1373,41 @@ export default function App() {
         const skillId = card.dataset.skill;
         const canUseForCharacter = availableSkillSet.has(skillId);
         const selected = state.equippedSkillIds.includes(skillId);
+        const unlocked = isSkillUnlocked(skillId);
         const disabledForLimit = !selected && reachedSkillLimit;
+        const disabledForGold = canUseForCharacter && !unlocked;
+        const unlockCost = getSkillUnlockCost(skillId);
+        const costLabel = card.querySelector("[data-skill-cost]");
+        const buyButton = card.querySelector(".skill-buy-button");
 
         card.classList.toggle("is-selected", selected);
+        card.classList.toggle("is-locked", disabledForGold);
         card.classList.toggle("is-disabled", !canUseForCharacter || disabledForLimit);
-        card.disabled = !canUseForCharacter || disabledForLimit;
+
+        if (costLabel) {
+          if (!canUseForCharacter) {
+            costLabel.hidden = false;
+            costLabel.textContent = "Unavailable for this fighter";
+          } else if (unlocked) {
+            costLabel.hidden = true;
+            costLabel.textContent = "";
+          } else {
+            costLabel.hidden = false;
+            costLabel.textContent = `Need ${unlockCost} gold`;
+          }
+        }
+
+        if (buyButton) {
+          const showBuy = canUseForCharacter && !unlocked;
+          const canAfford = state.gold >= unlockCost;
+          buyButton.hidden = !showBuy;
+          buyButton.disabled = !showBuy || !canAfford;
+          buyButton.textContent = canAfford ? `Buy ${unlockCost}` : "Not enough gold";
+        }
       });
 
       if (elements.skillHint) {
-        elements.skillHint.textContent = `${selectedCount}/${MAX_EQUIPPED_SKILLS} equipped`;
+        elements.skillHint.innerHTML = `${selectedCount}/${MAX_EQUIPPED_SKILLS} equipped · <span class="skill-hint-gold">Gold ${state.gold}</span>`;
       }
 
       if (elements.skillNext) {
@@ -1404,8 +1460,13 @@ export default function App() {
       if (elements.hudHighScore) {
         elements.hudHighScore.textContent = `High ${state.highScore}`;
       }
+      if (elements.hudGoldValue) {
+        elements.hudGoldValue.textContent = `${state.gold}`;
+      }
       if (elements.hudTime) {
-        elements.hudTime.textContent = `${Math.max(0, state.timeLeft)}`;
+        elements.hudTime.textContent = INFINITE_TIMER_MODE
+          ? `∞ ${Math.max(0, state.timeLeft)}s`
+          : `${Math.max(0, state.timeLeft)}`;
       }
       updateSkillButtons();
     }
@@ -2103,6 +2164,27 @@ export default function App() {
       return getNearBurstRatio();
     }
 
+    function calculateHitScoreGain(actualDamageDone, actionId) {
+      const actionBonusById = {
+        punch: 17,
+        kick: 31,
+        jumpPunch: 23,
+        jumpKick: 37,
+        crouchPunch: 19,
+        crouchKick: 29,
+        impactBurst: 47,
+        meteorPunch: 53,
+      };
+
+      const base = actualDamageDone * 82;
+      const actionBonus = actionBonusById[actionId] || 13;
+      const comboBonus = Math.min(180, state.combo * 11);
+      const stageBonus = state.stage === "car" ? 13 : 7;
+      const statBonus = Math.round(getStrengthMultiplier() * 9 + getAgilityMultiplier() * 6);
+
+      return Math.max(1, Math.round(base + actionBonus + comboBonus + stageBonus + statBonus));
+    }
+
     function castImpactBurst() {
       if (!state.running || state.targetBroken) {
         return;
@@ -2167,11 +2249,11 @@ export default function App() {
 
         const actualDamageDone = Math.max(0, targetHealthBefore - state.targetHealth);
         if (actualDamageDone > 0) {
-          state.score += actualDamageDone * 100;
+          state.score += calculateHitScoreGain(actualDamageDone, "impactBurst");
           if (state.score > state.highScore) {
             state.highScore = state.score;
             try {
-              window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+              window.localStorage.setItem(STORAGE_KEYS.highScore, String(state.highScore));
             } catch {
               // Ignore storage failures.
             }
@@ -2272,11 +2354,11 @@ export default function App() {
 
       const actualDamageDone = Math.max(0, targetHealthBefore - state.targetHealth);
       if (actualDamageDone > 0) {
-        state.score += actualDamageDone * 100;
+        state.score += calculateHitScoreGain(actualDamageDone, "meteorPunch");
         if (state.score > state.highScore) {
           state.highScore = state.score;
           try {
-            window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+            window.localStorage.setItem(STORAGE_KEYS.highScore, String(state.highScore));
           } catch {
             // Ignore storage failures.
           }
@@ -2688,7 +2770,7 @@ export default function App() {
       }
 
       const baseScore = state.score;
-      const remainingTimeBonus = Math.max(0, Math.floor(state.timeLeft));
+      const remainingTimeBonus = INFINITE_TIMER_MODE ? 0 : Math.max(0, Math.floor(state.timeLeft));
       const finalScore = baseScore + remainingTimeBonus;
       let bonusLeft = remainingTimeBonus;
 
@@ -2733,13 +2815,19 @@ export default function App() {
           state.bonusTimer = null;
         }
         state.score = finalScore;
+        const victoryGoldBase = Math.max(40, Math.floor(finalScore / 25)) + 60;
+        const earnedGold = won ? Math.max(1, Math.floor(victoryGoldBase * 0.25)) : 0;
+        if (earnedGold > 0) {
+          state.gold += earnedGold;
+          saveProgress();
+        }
         if (elements.stageBonusLabel) {
           elements.stageBonusLabel.textContent = "Complete";
         }
         if (state.score > state.highScore) {
           state.highScore = state.score;
           try {
-            window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+            window.localStorage.setItem(STORAGE_KEYS.highScore, String(state.highScore));
           } catch {
             // Ignore storage failures.
           }
@@ -2765,9 +2853,12 @@ export default function App() {
         }
         if (elements.resultCopy) {
           const scoreBreakdown = `Base ${baseScore} + Time Bonus ${remainingTimeBonus} = ${finalScore}.`;
+          const goldBreakdown = won
+            ? ` Gold earned: ${earnedGold}.`
+            : " No gold earned. Complete the target to gain gold.";
           elements.resultCopy.textContent = won
-            ? `You smashed the ${STAGES[state.stage].label.toLowerCase()}. ${scoreBreakdown}`
-            : `The ${STAGES[state.stage].label.toLowerCase()} survived. ${scoreBreakdown}`;
+            ? `You smashed the ${STAGES[state.stage].label.toLowerCase()}. ${scoreBreakdown}${goldBreakdown}`
+            : `The ${STAGES[state.stage].label.toLowerCase()} survived. ${scoreBreakdown}${goldBreakdown}`;
         }
       }, END_ROUND_DELAY_MS);
     }
@@ -2837,11 +2928,11 @@ export default function App() {
 
       const actualDamageDone = Math.max(0, targetHealthBefore - state.targetHealth);
 
-      state.score += actualDamageDone * 100;
+      state.score += calculateHitScoreGain(actualDamageDone, mappedAction);
       if (state.score > state.highScore) {
         state.highScore = state.score;
         try {
-          window.localStorage.setItem("streetBuster.highScore", String(state.highScore));
+          window.localStorage.setItem(STORAGE_KEYS.highScore, String(state.highScore));
         } catch {
           // Ignore storage failures.
         }
@@ -3004,7 +3095,7 @@ export default function App() {
       state.running = true;
       state.score = 0;
       state.combo = 0;
-      state.timeLeft = 60;
+      state.timeLeft = 0;
       state.crouching = false;
       state.airborne = false;
       state.action = "idle";
@@ -3056,9 +3147,9 @@ export default function App() {
       }
       state.jumpStart = performance.now();
       state.gameTimer = window.setInterval(() => {
-        state.timeLeft -= 1;
+        state.timeLeft += 1;
         updateHud();
-        if (state.timeLeft <= 0) {
+        if (!INFINITE_TIMER_MODE && state.timeLeft <= 0) {
           finishGame(false);
         }
       }, 1000);
@@ -3284,10 +3375,28 @@ export default function App() {
     }
 
     try {
-      const storedHighScore = Number(window.localStorage.getItem("streetBuster.highScore") || 0);
+      const storedHighScore = Number(window.localStorage.getItem(STORAGE_KEYS.highScore) || 0);
       state.highScore = Number.isFinite(storedHighScore) && storedHighScore > 0 ? Math.floor(storedHighScore) : 0;
     } catch {
       state.highScore = 0;
+    }
+
+    try {
+      const storedGold = Number(window.localStorage.getItem(STORAGE_KEYS.gold) || 0);
+      state.gold = Number.isFinite(storedGold) && storedGold > 0 ? Math.floor(storedGold) : 0;
+    } catch {
+      state.gold = 0;
+    }
+
+    try {
+      const rawUnlocked = window.localStorage.getItem(STORAGE_KEYS.unlockedSkills);
+      const parsed = rawUnlocked ? JSON.parse(rawUnlocked) : [];
+      const unlockedIds = Array.isArray(parsed)
+        ? parsed.filter((skillId) => typeof skillId === "string" && getCharacterSkillIds("default").includes(skillId))
+        : [];
+      state.unlockedSkillIds = new Set(["breaker", ...unlockedIds]);
+    } catch {
+      state.unlockedSkillIds = new Set(["breaker"]);
     }
 
     elements.characterCards.forEach((card) => {
@@ -3303,10 +3412,32 @@ export default function App() {
     });
 
     elements.skillCards.forEach((card) => {
-      on(card, "click", () => {
+      on(card, "click", (event) => {
+        if (card.classList.contains("is-disabled")) {
+          return;
+        }
+
+        const buyButton = event.target.closest(".skill-buy-button");
         const skillId = card.dataset.skill;
         const available = getCharacterSkillSet(state.character);
         if (!available.has(skillId)) {
+          return;
+        }
+
+        if (buyButton) {
+          const unlockCost = getSkillUnlockCost(skillId);
+          if (state.gold < unlockCost) {
+            return;
+          }
+
+          state.gold = Math.max(0, state.gold - unlockCost);
+          state.unlockedSkillIds.add(skillId);
+          saveProgress();
+          updateSelectionCards();
+          return;
+        }
+
+        if (!isSkillUnlocked(skillId)) {
           return;
         }
 
@@ -3499,9 +3630,16 @@ export default function App() {
       <main className="app-shell">
         <section className="top-bar">
           <div className="score-row">
-            <div className="score-pill" id="hud-score">Score 0</div>
+            <div className="score-stack-left">
+              <div className="score-pill" id="hud-score">Score 0</div>
+              <div className="score-pill" id="hud-high-score">High 0</div>
+            </div>
             <div className="timer-pill" id="hud-time">60</div>
-            <div className="score-pill" id="hud-high-score">High 0</div>
+            <div className="score-pill gold-pill" id="hud-gold">
+              <span className="gold-icon" aria-hidden="true">$</span>
+              <span>Gold</span>
+              <strong id="hud-gold-value">0</strong>
+            </div>
           </div>
           <div className="fight-row">
             <div className="life-hud enemy full-width">
@@ -3523,25 +3661,27 @@ export default function App() {
         </section>
 
         <section className="screen selection-screen screen-character" id="screen-character">
-          <div className="panel-head panel-head-centered">
-            <h2 className="selection-title">Character Selection</h2>
-            <p className="selection-subtitle">Choose your fighter</p>
-          </div>
-          <div className="character-selection-layout">
-            <div className="character-preview-panel">
-              <img id="character-preview-sprite" className="character-preview-sprite" src="assets/actions/default/default-idle-position.gif" alt="Default idle preview" />
-              <p className="character-preview-kicker">Selected Fighter</p>
-              <h3 id="character-preview-name" className="character-preview-name">Default</h3>
-              <p id="character-preview-stats" className="selection-subtitle">STR 5 | AGI 5</p>
+          <div className="selection-frame">
+            <div className="panel-head panel-head-centered">
+              <h2 className="selection-title">Character Selection</h2>
+              <p className="selection-subtitle">Choose your fighter</p>
             </div>
-            <div className="selection-grid character-selection-grid" id="character-grid">
-              <button className="choice-card character-choice-card is-selected" data-character="default" type="button">
-                <img className="character-choice-image" src="assets/selection/select-default.gif" alt="Default selection preview" />
-              </button>
-              <button className="choice-card character-choice-card is-locked" data-character="female-hulk" type="button" disabled>
-                <img className="character-choice-image" src="assets/selection/select-female-hulk.gif" alt="Female Hulk selection preview" />
-                <span className="lock-badge">Locked</span>
-              </button>
+            <div className="character-selection-layout">
+              <div className="character-preview-panel">
+                <img id="character-preview-sprite" className="character-preview-sprite" src="assets/actions/default/default-idle-position.gif" alt="Hero idle preview" />
+                <p className="character-preview-kicker">Selected Fighter</p>
+                <h3 id="character-preview-name" className="character-preview-name">Hero</h3>
+                <p id="character-preview-stats" className="selection-subtitle">STR 5 | AGI 5</p>
+              </div>
+              <div className="selection-grid character-selection-grid" id="character-grid">
+                <button className="choice-card character-choice-card is-selected" data-character="default" type="button">
+                  <img className="character-choice-image" src="assets/selection/select-default.gif" alt="Hero selection preview" />
+                </button>
+                <button className="choice-card character-choice-card is-locked" data-character="female-hulk" type="button" disabled>
+                  <img className="character-choice-image" src="assets/selection/select-female-hulk.gif" alt="Female Hulk selection preview" />
+                  <span className="lock-badge">Locked</span>
+                </button>
+              </div>
             </div>
           </div>
           <div className="screen-actions">
@@ -3551,44 +3691,54 @@ export default function App() {
         </section>
 
         <section className="screen selection-screen" id="screen-skill">
-          <div className="panel-head panel-head-centered">
-            <h2 className="selection-title">Equip Skills</h2>
-            <p className="selection-subtitle">Choose up to 2 skills</p>
-          </div>
-          <p className="selection-subtitle" id="skill-selection-hint">0/2 equipped</p>
-          <div className="selection-grid skill-selection-grid" id="skill-grid">
-            <button className="choice-card skill-card" data-skill="meteorPunch" type="button">
-              <img className="skill-card-icon" src="assets/skill-icons/meteor-punch.jpg" alt="Meteor Punch icon" />
-              <div className="skill-card-info">
-                <strong>Meteor Punch</strong>
-                <span>Fly up and slam the roof.</span>
-                <small>AOE 20% damage to all. 12s cooldown.</small>
+          <div className="selection-frame">
+            <div className="panel-head panel-head-centered">
+              <h2 className="selection-title">Equip Skills</h2>
+              <p className="selection-subtitle">Choose up to 2 skills</p>
+            </div>
+            <p className="selection-subtitle" id="skill-selection-hint">0/2 equipped</p>
+            <div className="selection-grid skill-selection-grid" id="skill-grid">
+              <div className="choice-card skill-card" data-skill="breaker" role="button" tabIndex={0}>
+                <img className="skill-card-icon" src="assets/skill-icons/breaker.jpg" alt="Breaker icon" />
+                <div className="skill-card-info">
+                  <strong>Breaker</strong>
+                  <span>+15 Strength for 7s.</span>
+                  <small>15s cooldown.</small>
+                  <small className="skill-price" data-skill-cost="breaker" hidden></small>
+                  <button className="skill-buy-button" type="button" hidden>Buy 0</button>
+                </div>
               </div>
-            </button>
-            <button className="choice-card skill-card" data-skill="breaker" type="button">
-              <img className="skill-card-icon" src="assets/skill-icons/breaker.jpg" alt="Breaker icon" />
-              <div className="skill-card-info">
-                <strong>Breaker</strong>
-                <span>+15 Strength for 7s.</span>
-                <small>15s cooldown.</small>
+              <div className="choice-card skill-card" data-skill="accelerate" role="button" tabIndex={0}>
+                <img className="skill-card-icon" src="assets/skill-icons/accelerate.jpg" alt="Accelerate icon" />
+                <div className="skill-card-info">
+                  <strong>Accelerate</strong>
+                  <span>+30 Agility for 7s.</span>
+                  <small>15s cooldown.</small>
+                  <small className="skill-price" data-skill-cost="accelerate">Need 500 gold</small>
+                  <button className="skill-buy-button" type="button">Buy 500</button>
+                </div>
               </div>
-            </button>
-            <button className="choice-card skill-card" data-skill="accelerate" type="button">
-              <img className="skill-card-icon" src="assets/skill-icons/accelerate.jpg" alt="Accelerate icon" />
-              <div className="skill-card-info">
-                <strong>Accelerate</strong>
-                <span>+30 Agility for 7s.</span>
-                <small>15s cooldown.</small>
+              <div className="choice-card skill-card" data-skill="impactBurst" role="button" tabIndex={0}>
+                <img className="skill-card-icon" src="assets/skill-icons/impact-burst.jpg" alt="Impact Burst icon" />
+                <div className="skill-card-info">
+                  <strong>Impact Burst</strong>
+                  <span>AOE burst: near +22%.</span>
+                  <small>Other hits +15%. 10s cooldown.</small>
+                  <small className="skill-price" data-skill-cost="impactBurst">Need 1000 gold</small>
+                  <button className="skill-buy-button" type="button">Buy 1000</button>
+                </div>
               </div>
-            </button>
-            <button className="choice-card skill-card" data-skill="impactBurst" type="button">
-              <img className="skill-card-icon" src="assets/skill-icons/impact-burst.jpg" alt="Impact Burst icon" />
-              <div className="skill-card-info">
-                <strong>Impact Burst</strong>
-                <span>AOE burst: near +22%.</span>
-                <small>Other hits +15%. 10s cooldown.</small>
+              <div className="choice-card skill-card" data-skill="meteorPunch" role="button" tabIndex={0}>
+                <img className="skill-card-icon" src="assets/skill-icons/meteor-punch.jpg" alt="Meteor Punch icon" />
+                <div className="skill-card-info">
+                  <strong>Meteor Punch</strong>
+                  <span>Fly up and slam the roof.</span>
+                  <small>AOE 20% damage to all. 12s cooldown.</small>
+                  <small className="skill-price" data-skill-cost="meteorPunch">Need 1500 gold</small>
+                  <button className="skill-buy-button" type="button">Buy 1500</button>
+                </div>
               </div>
-            </button>
+            </div>
           </div>
           <div className="screen-actions">
             <button className="secondary-button nav-back-button" id="skill-back" type="button">Back</button>
@@ -3597,37 +3747,39 @@ export default function App() {
         </section>
 
         <section className="screen selection-screen" id="screen-stage">
-          <div className="panel-head panel-head-centered">
-            <h2 className="selection-title">Stage Selection</h2>
-            <p className="selection-subtitle" id="stage-character-label">Selected Fighter: Default</p>
-          </div>
-          <div className="character-selection-layout stage-selection-layout">
-            <div className="character-preview-panel stage-selected-character">
-              <img id="stage-character-sprite" className="stage-character-sprite" src="assets/actions/default/default-idle-position.gif" alt="Default idle preview" />
-              <div>
-                <p className="character-preview-kicker">Current Fighter</p>
-                <h3 id="stage-character-name" className="character-preview-name">Default</h3>
-                <p id="stage-character-stats" className="selection-subtitle">STR 5 | AGI 5</p>
-              </div>
+          <div className="selection-frame">
+            <div className="panel-head panel-head-centered">
+              <h2 className="selection-title">Stage Selection</h2>
+              <p className="selection-subtitle" id="stage-character-label">Selected Fighter: Hero</p>
             </div>
-            <div className="selection-grid stage-grid stage-selection-grid" id="stage-grid">
-              <button className="choice-card is-selected" data-stage="car" type="button">
-                <div className="stage-preview stage-preview-image-wrap">
-                  <img className="stage-preview-image" src="assets/stages/stage-car-img.png" alt="Car stage preview" />
+            <div className="character-selection-layout stage-selection-layout">
+              <div className="character-preview-panel stage-selected-character">
+                <img id="stage-character-sprite" className="stage-character-sprite" src="assets/actions/default/default-idle-position.gif" alt="Hero idle preview" />
+                <div>
+                  <p className="character-preview-kicker">Current Fighter</p>
+                  <h3 id="stage-character-name" className="character-preview-name">Hero</h3>
+                  <p id="stage-character-stats" className="selection-subtitle">STR 5 | AGI 5</p>
                 </div>
-                <span>Car</span>
-              </button>
-              <button className="choice-card" data-stage="wooden-box" type="button">
-                <div className="stage-preview stage-preview-image-wrap">
-                  <img className="stage-preview-image" src="assets/stages/stage-woodbox-img.png" alt="Wooden box stage preview" />
-                </div>
-                <span>Wooden Box</span>
-              </button>
+              </div>
+              <div className="selection-grid stage-grid stage-selection-grid" id="stage-grid">
+                <button className="choice-card is-selected" data-stage="car" type="button">
+                  <div className="stage-preview stage-preview-image-wrap">
+                    <img className="stage-preview-image" src="assets/stages/stage-car-img.png" alt="Car stage preview" />
+                  </div>
+                  <span>Car</span>
+                </button>
+                <button className="choice-card" data-stage="wooden-box" type="button">
+                  <div className="stage-preview stage-preview-image-wrap">
+                    <img className="stage-preview-image" src="assets/stages/stage-woodbox-img.png" alt="Wooden box stage preview" />
+                  </div>
+                  <span>Wooden Box</span>
+                </button>
+              </div>
             </div>
           </div>
           <div className="screen-actions">
             <button className="secondary-button nav-back-button" id="stage-back" type="button">Back</button>
-            <button className="primary-button" id="stage-start" type="button">Start Fight</button>
+            <button className="primary-button" id="stage-start" type="button">DESTROY!!!</button>
           </div>
         </section>
 
