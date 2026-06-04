@@ -12,7 +12,7 @@
   --danger: #ff736d;
   --border: rgba(255, 255, 255, 0.12);
   --shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-  --fighter-width: min(220px, 42vw);
+  --fighter-width: min(132px, 25.2vw);
 }
 
 * {
@@ -125,8 +125,6 @@ button {
   gap: 8px;
   margin-bottom: 10px;
   padding: 6px 2px 2px;
-  margin-left: -20px;
-  margin-right: -20px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -391,7 +389,10 @@ h2 {
 }
 
 #screen-game {
-  overflow: hidden;
+  overflow: hidden!important;
+  background: url(/assets/backgrounds/car-bg-1.jpg) center 100% / 110% no-repeat;
+  background-position-x: 80%;
+  max-height: 500px;
 }
 
 .screen-start {
@@ -1435,8 +1436,9 @@ h2 {
 
 .game-area {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   flex: 1;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .status-strip {
@@ -1484,11 +1486,11 @@ h2 {
 .arena {
   position: relative;
   min-height: clamp(500px, 58vh, 660px);
-  border: 1px solid var(--border);
+  /* border: 1px solid var(--border);
   border-radius: 28px;
   background:
     radial-gradient(circle at 50% 0%, rgba(255, 203, 96, 0.18), transparent 32%),
-    linear-gradient(180deg, rgba(21, 24, 38, 0.92), rgba(10, 11, 16, 0.98));
+    linear-gradient(180deg, rgba(21, 24, 38, 0.92), rgba(10, 11, 16, 0.98)); */
   overflow: hidden;
 }
 
@@ -1501,7 +1503,7 @@ h2 {
   z-index: 3;
 }
 
-.ground {
+/* .ground {
   position: absolute;
   left: 0;
   right: 0;
@@ -1518,7 +1520,7 @@ h2 {
   height: 22px;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.07), transparent 30%, rgba(255, 255, 255, 0.03) 70%, transparent);
   opacity: 0.45;
-}
+} */
 
 .fighter-wrap {
   position: absolute;
@@ -1560,8 +1562,8 @@ h2 {
   position: absolute;
   left: 50%;
   bottom: 2.5%;
-  width: min(320px, 40vw);
-  height: min(320px, 40vw);
+  width: min(192px, 24vw);
+  height: min(192px, 24vw);
   display: grid;
   place-items: end center;
   transform: translateX(-50%);
@@ -1950,15 +1952,14 @@ h2 {
 }
 
 .controls-overlay {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 10px;
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: end;
   gap: 12px;
-  pointer-events: none;
+  pointer-events: auto;
+  padding: 6px 2px 0;
+  bottom: 220px;
 }
 
 .left-controls {
@@ -2391,13 +2392,13 @@ h2 {
   }
 
   .fighter-wrap {
-    width: min(180px, 38vw);
+    width: min(108px, 22.8vw);
   }
 
   .target-wrap {
     left: 50%;
-    width: min(220px, 42vw);
-    height: min(220px, 42vw);
+    width: min(132px, 25.2vw);
+    height: min(132px, 25.2vw);
   }
 }
 
@@ -2484,6 +2485,16 @@ h2 {
 
   .orientation-lock {
     display: none;
+  }
+
+  .game-area {
+    gap: 10px;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .controls-overlay {
+    align-items: center;
+    padding-top: 4px;
   }
 }
 
@@ -2732,10 +2743,8 @@ h2 {
   }
 
   .controls-overlay {
-    left: 8px;
-    right: 8px;
-    bottom: 6px;
     gap: 8px;
+    padding-top: 2px;
   }
 
   .left-controls {

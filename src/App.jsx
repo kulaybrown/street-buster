@@ -164,6 +164,10 @@ const CHARACTER_TARGET_SCALE = {
 
 const END_ROUND_DELAY_MS = 3000;
 const INFINITE_TIMER_MODE = true;
+const ARENA_ENTITY_SCALE = 0.6;
+const CAR_TARGET_SIZE_MULTIPLIER = 1.4;
+const ROOF_STAND_DROP_PX = 35;
+const TEMPORARILY_UNLOCK_ALL_SKILLS = true;
 const METEOR_EFFECT_SIZE_MULTIPLIER = 2;
 const STORAGE_KEYS = {
   highScore: "streetBuster.highScore",
@@ -357,7 +361,8 @@ export default function App() {
       return Number.isFinite(unlockCost) && unlockCost > 0 ? Math.floor(unlockCost) : 0;
     };
 
-    const isSkillUnlocked = (skillId) => getSkillUnlockCost(skillId) === 0 || state.unlockedSkillIds.has(skillId);
+    const isSkillUnlocked = (skillId) =>
+      TEMPORARILY_UNLOCK_ALL_SKILLS || getSkillUnlockCost(skillId) === 0 || state.unlockedSkillIds.has(skillId);
 
     const saveProgress = () => {
       try {
@@ -906,6 +911,8 @@ export default function App() {
       }
 
       canvas.classList.add("meteor-pixi-layer");
+      canvas.style.background = "transparent";
+      canvas.style.pointerEvents = "none";
       elements.arena.appendChild(canvas);
 
       const container = new PIXI.Container();
@@ -1801,12 +1808,12 @@ export default function App() {
       const fighterRect = elements.fighterWrap?.getBoundingClientRect();
       const targetRect = elements.targetWrap?.getBoundingClientRect();
       const arenaWidth = arenaRect?.width || 900;
-      const fighterWidth = fighterRect?.width || (window.innerWidth <= 560 ? 150 : 210);
+      const fighterWidth = fighterRect?.width || (window.innerWidth <= 560 ? 150 * ARENA_ENTITY_SCALE : 210 * ARENA_ENTITY_SCALE);
       const baseLeft = 0;
       const minOffset = 8;
       const maxOffset = arenaWidth - fighterWidth - 8;
       const carCenterX = arenaWidth * 0.5;
-      const carHalfWidth = targetRect ? targetRect.width * 0.44 : Math.min(180, arenaWidth * 0.17);
+      const carHalfWidth = targetRect ? targetRect.width * 0.44 : Math.min(180 * ARENA_ENTITY_SCALE, arenaWidth * (0.17 * ARENA_ENTITY_SCALE));
 
       return {
         arenaWidth,
@@ -1821,6 +1828,10 @@ export default function App() {
 
     function getRoofHeight() {
       return window.innerWidth <= 560 ? 74 : 98;
+    }
+
+    function getRoofStandLift() {
+      return Math.max(0, getRoofHeight() - ROOF_STAND_DROP_PX);
     }
 
     function getWalkAxis() {
@@ -1951,7 +1962,13 @@ export default function App() {
       const metrics = getArenaMetrics();
       const characterScale = CHARACTER_TARGET_SCALE[state.character] ?? 1;
       const targetSize = Math.round(
-        Math.max(262, Math.min(metrics.arenaWidth * 0.57, metrics.fighterWidth * 2.02 * characterScale)),
+        Math.max(
+          262 * ARENA_ENTITY_SCALE * CAR_TARGET_SIZE_MULTIPLIER,
+          Math.min(
+            metrics.arenaWidth * (0.57 * ARENA_ENTITY_SCALE) * CAR_TARGET_SIZE_MULTIPLIER,
+            metrics.fighterWidth * (2.02 * ARENA_ENTITY_SCALE) * characterScale * CAR_TARGET_SIZE_MULTIPLIER,
+          ),
+        ),
       );
 
       elements.targetWrap.style.width = `${targetSize}px`;
@@ -2966,7 +2983,7 @@ export default function App() {
         const progress = Math.min(1, (now - meteor.startTime) / meteor.durationMs);
         const upEnd = 0.45;
         const rotateEnd = 0.62;
-        const roofLift = state.stage === "car" ? getRoofHeight() : 0;
+        const roofLift = state.stage === "car" ? getRoofStandLift() : 0;
         const viewportHeight = window.innerHeight || 900;
         const fighterHeight = elements.fighterWrap?.getBoundingClientRect().height || 220;
         // Push the fighter fully outside the visible viewport during meteor hang time.
@@ -3031,7 +3048,7 @@ export default function App() {
       }
 
       const jumpHeight = window.innerWidth <= 560 ? 78 : 112;
-      const roofHeight = getRoofHeight();
+      const roofStandLift = getRoofStandLift();
       let yOffset = 0;
       let xOffset = state.moveOffsetX;
 
@@ -3067,12 +3084,12 @@ export default function App() {
           arcY = jumpHeight * (1 - fallProgress * fallProgress);
         }
 
-        const startLift = state.jumpFromRoof ? roofHeight : 0;
-        const endLift = state.jumpLandOnRoof ? roofHeight : 0;
+        const startLift = state.jumpFromRoof ? roofStandLift : 0;
+        const endLift = state.jumpLandOnRoof ? roofStandLift : 0;
         const lift = startLift + (endLift - startLift) * progress;
         yOffset = -lift - arcY;
       } else if (state.onRoof) {
-        yOffset = -roofHeight;
+        yOffset = -roofStandLift;
       } else if (state.crouching) {
         yOffset = 0;
       }
@@ -3800,43 +3817,43 @@ export default function App() {
               <div className="fighter-wrap" id="fighter-wrap">
                 <img id="fighter-sprite" alt="Fighter sprite" />
               </div>
+            </div>
 
-              <div className="controls-overlay">
-                <div className="left-controls">
-                  <div className="dpad" aria-label="Direction controls">
-                    <span className="dpad-gap dpad-up-left" aria-hidden="true"></span>
-                    <button className="control-button dpad-up" data-action="jump" type="button">↑</button>
-                    <span className="dpad-gap dpad-up-right" aria-hidden="true"></span>
-                    <button className="control-button dpad-left" data-action="moveLeft" type="button">←</button>
-                    <div className="joystick-core" aria-hidden="true"></div>
-                    <button className="control-button dpad-right" data-action="moveRight" type="button">→</button>
-                    <span className="dpad-gap dpad-down-left" aria-hidden="true"></span>
-                    <button className="control-button dpad-down" data-action="crouch" type="button">↓</button>
-                    <span className="dpad-gap dpad-down-right" aria-hidden="true"></span>
-                  </div>
+            <div className="controls-overlay">
+              <div className="left-controls">
+                <div className="dpad" aria-label="Direction controls">
+                  <span className="dpad-gap dpad-up-left" aria-hidden="true"></span>
+                  <button className="control-button dpad-up" data-action="jump" type="button">↑</button>
+                  <span className="dpad-gap dpad-up-right" aria-hidden="true"></span>
+                  <button className="control-button dpad-left" data-action="moveLeft" type="button">←</button>
+                  <div className="joystick-core" aria-hidden="true"></div>
+                  <button className="control-button dpad-right" data-action="moveRight" type="button">→</button>
+                  <span className="dpad-gap dpad-down-left" aria-hidden="true"></span>
+                  <button className="control-button dpad-down" data-action="crouch" type="button">↓</button>
+                  <span className="dpad-gap dpad-down-right" aria-hidden="true"></span>
                 </div>
+              </div>
 
-                <div className="right-controls">
-                  <div className="skill-stack" aria-label="Skill controls">
-                    <button className="control-button action-skill" data-action="skill1" id="skill-slot-1" type="button">
-                      <span className="skill-slot-icon">S1</span>
-                      <span className="skill-slot-name">Empty</span>
-                      <span className="skill-slot-cd">Ready</span>
-                    </button>
-                    <button className="control-button action-skill" data-action="skill2" id="skill-slot-2" type="button">
-                      <span className="skill-slot-icon">S2</span>
-                      <span className="skill-slot-name">Empty</span>
-                      <span className="skill-slot-cd">Ready</span>
-                    </button>
-                  </div>
-                  <div className="action-pad" aria-label="Action controls">
-                    <button className="control-button action-punch" data-action="punch" type="button" aria-label="Punch (P)">
-                      <span className="action-label">P</span>
-                    </button>
-                    <button className="control-button action-kick" data-action="kick" type="button" aria-label="Kick (K)">
-                      <span className="action-label">K</span>
-                    </button>
-                  </div>
+              <div className="right-controls">
+                <div className="skill-stack" aria-label="Skill controls">
+                  <button className="control-button action-skill" data-action="skill1" id="skill-slot-1" type="button">
+                    <span className="skill-slot-icon">S1</span>
+                    <span className="skill-slot-name">Empty</span>
+                    <span className="skill-slot-cd">Ready</span>
+                  </button>
+                  <button className="control-button action-skill" data-action="skill2" id="skill-slot-2" type="button">
+                    <span className="skill-slot-icon">S2</span>
+                    <span className="skill-slot-name">Empty</span>
+                    <span className="skill-slot-cd">Ready</span>
+                  </button>
+                </div>
+                <div className="action-pad" aria-label="Action controls">
+                  <button className="control-button action-punch" data-action="punch" type="button" aria-label="Punch (P)">
+                    <span className="action-label">P</span>
+                  </button>
+                  <button className="control-button action-kick" data-action="kick" type="button" aria-label="Kick (K)">
+                    <span className="action-label">K</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -3847,8 +3864,8 @@ export default function App() {
       <div className="orientation-lock" aria-hidden="true">
         <div className="orientation-lock-card">
           <p className="orientation-lock-kicker">Mobile Layout</p>
-          <h2>Rotate to Landscape</h2>
-          <p>Street Buster is tuned for landscape play on phones.</p>
+          <h2>Vertical Ready</h2>
+          <p>Street Buster is tuned to run in portrait mode on phones.</p>
         </div>
       </div>
 
