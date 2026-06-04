@@ -107,7 +107,7 @@ button {
     radial-gradient(circle at 50% 14%, rgba(255, 211, 102, 0.16), transparent 40%),
     radial-gradient(circle at 50% 82%, rgba(3, 4, 10, 0.58), transparent 52%),
     linear-gradient(180deg, rgba(7, 8, 14, 0.48), rgba(7, 8, 14, 0.82)),
-    url("assets/backgrounds/start-game-bg.png") center 0% / 122% auto no-repeat;
+    url("/assets/backgrounds/start-game-bg.png") center 0% / 122% auto no-repeat;
   background-size: 100% 100%, 100% 100%, 100% 100%, cover;
   background-position: center center, center center, center center, center center;
   background-repeat: no-repeat;
@@ -393,6 +393,7 @@ h2 {
   background: url(/assets/backgrounds/car-bg-1.jpg) center 100% / 110% no-repeat;
   background-position-x: 80%;
   max-height: 500px;
+  padding: 0px;
 }
 
 .screen-start {
@@ -421,7 +422,7 @@ h2 {
   inset: 0;
   background:
     linear-gradient(180deg, rgba(8, 9, 16, 0.38), rgba(8, 9, 16, 0.82)),
-    url("assets/backgrounds/start-game-bg.png") center 0% / 122% auto no-repeat;
+    url("/assets/backgrounds/start-game-bg.png") center 0% / 122% auto no-repeat;
   background-size: 100% 100%, 122% auto;
   background-position: center center, center 0%;
   background-repeat: no-repeat, no-repeat;
@@ -899,7 +900,9 @@ h2 {
   justify-content: flex-start;
   flex-wrap: wrap;
   gap: 18px;
-  margin: 18px 0 24px;
+  /* margin: 18px 0 24px; */
+  height: 60px;
+  /* width: 120px; */
 }
 
 .character-selection-layout {
@@ -929,7 +932,7 @@ h2 {
   border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(8, 14, 38, 0.45), rgba(7, 12, 30, 0.62)),
-    url("assets/backgrounds/cage-bg.jpg") center / cover no-repeat;
+    url("/assets/backgrounds/cage-bg.jpg") center / cover no-repeat;
   box-shadow:
     inset 0 0 0 2px rgba(22, 36, 68, 0.92),
     inset 0 -20px 30px rgba(0, 0, 0, 0.34);
@@ -947,7 +950,7 @@ h2 {
 }
 .character-preview-sprite,
 .stage-character-sprite {
-  width: min(100%, 200px);
+  width: min(100%, 100px);
   aspect-ratio: 1 / 1;
   object-fit: contain;
   image-rendering: pixelated;
@@ -969,10 +972,10 @@ h2 {
   line-height: 1.4;
 }
 
-.character-selection-grid {
+/* .character-selection-grid {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   margin: 0;
-}
+} */
 
 .character-choice-card {
   aspect-ratio: 1 / 1;
@@ -1011,13 +1014,16 @@ h2 {
 
 .character-choice-card .lock-badge {
   font-family: "Press Start 2P", monospace;
-  font-size: 0.62rem;
+  font-size: 7px;
   line-height: 1.4;
   color: #ffd8a6;
   background: rgba(38, 26, 14, 0.86);
   border: 1px solid rgba(255, 198, 128, 0.45);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 2px 4px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
 }
 
 .skill-selection-grid {
@@ -1025,6 +1031,9 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin: 6px 0 24px;
+}
+.choice-card.skill-card {
+  width: 100%;
 }
 
 .skill-card {
@@ -1038,6 +1047,7 @@ h2 {
   padding: 0;
   position: relative;
   overflow: hidden;
+
 }
 
 .skill-card-info {
@@ -1165,11 +1175,13 @@ h2 {
   border: 1px solid var(--border);
   background: #11141c;
   color: var(--text);
-  display: grid;
+
   justify-items: center;
   padding: 0px;
   text-align: center;
   position: relative;
+  width: 60px;
+  height: 60px;
 }
 
 .choice-card img {
@@ -1214,13 +1226,18 @@ h2 {
 .stage-selection-grid {
   margin: 0;
 }
-
+.stage-selection-grid .choice-card {
+  width: auto;
+  height: auto;
+}
 .stage-grid .choice-card span {
   font-family: "Press Start 2P", monospace;
   font-size: 0.60rem;
   line-height: 1.4;
   position: absolute;
   bottom: 10px;
+  left: 0;
+  width: 100%;
 }
 
 .stage-preview-image-wrap {
@@ -1372,7 +1389,6 @@ h2 {
 .result-actions {
   display: flex;
   gap: 12px;
-  flex-wrap: wrap;
   justify-content: space-between;
 }
 
@@ -1436,9 +1452,9 @@ h2 {
 
 .game-area {
   display: grid;
-  gap: 14px;
   flex: 1;
   grid-template-rows: minmax(0, 1fr) auto;
+  position: relative;
 }
 
 .status-strip {
@@ -1952,14 +1968,15 @@ h2 {
 }
 
 .controls-overlay {
-  position: relative;
+  position: absolute;
   display: flex;
   justify-content: space-between;
   align-items: end;
   gap: 12px;
   pointer-events: auto;
   padding: 6px 2px 0;
-  bottom: 220px;
+  bottom: 10px;
+  width: 100%;
 }
 
 .left-controls {
@@ -2303,8 +2320,8 @@ h2 {
   #screen-skill .selection-frame,
   #screen-stage .selection-frame {
     height: auto;
-    min-height: calc(100dvh - 32px);
-    max-height: calc(100dvh - 32px);
+    /* min-height: calc(100dvh - 32px);
+    max-height: calc(100dvh - 32px); */
     padding: 14px;
     border-width: 9px;
   }
@@ -2333,8 +2350,10 @@ h2 {
   }
 
   .skill-selection-grid {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+    height: auto;
   }
 
   .character-selection-layout,
@@ -2355,11 +2374,11 @@ h2 {
     padding: 12px;
   }
 
-  .character-selection-grid {
+  /* .character-selection-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
-  }
+  } */
 
   .stage-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2374,15 +2393,15 @@ h2 {
     text-align: center;
   }
 
-  .screen-actions,
+  /* .screen-actions,
   .result-actions {
     flex-direction: column;
-  }
+  } */
 
-  .screen-actions > *,
+  /* .screen-actions > *,
   .result-actions > * {
     width: 100%;
-  }
+  } */
 
   #character-next,
   #skill-next,
@@ -2428,12 +2447,12 @@ h2 {
   }
 
   .stage-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
   }
 
   .stage-grid .choice-card {
-    min-height: 170px;
+    /* min-height: 100px; */
   }
 
   .stage-preview {
@@ -2625,10 +2644,10 @@ h2 {
     max-width: 100%;
   }
 
-  .character-selection-grid {
+  /* .character-selection-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
-  }
+  } */
 
   .character-choice-card {
     padding: 10px;
