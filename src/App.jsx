@@ -211,8 +211,9 @@ function getCarVariantCode(carPartHealth) {
 
 function getCarVariantArt(carPartHealth) {
   const variantCode = getCarVariantCode(carPartHealth);
-  const directVariantUrl = withBase(`/assets/cars/${variantCode}.gif`);
-  const directFallbackUrl = withBase("/assets/cars/111.gif");
+  const directVariantUrl = withBase(`assets/cars/${variantCode}.gif`);
+  const directFallbackUrl = withBase("assets/cars/111.gif");
+
 
 
   return {
@@ -3771,17 +3772,17 @@ export default function App() {
             </div>
             <div className="character-selection-layout">
               <div className="character-preview-panel">
-                <img id="character-preview-sprite" className="character-preview-sprite" src="assets/actions/default/default-idle-position.gif" alt="Hero idle preview" />
+                <img id="character-preview-sprite" className="character-preview-sprite" src={withBase("assets/actions/default/default-idle-position.gif")} alt="Hero idle preview" />
                 <p className="character-preview-kicker">Selected Fighter</p>
                 <h3 id="character-preview-name" className="character-preview-name">Hero</h3>
                 <p id="character-preview-stats" className="selection-subtitle">STR 5 | AGI 5</p>
               </div>
               <div className="selection-grid character-selection-grid" id="character-grid">
                 <button className="choice-card character-choice-card is-selected" data-character="default" type="button">
-                  <img className="character-choice-image" src="assets/selection/select-default.gif" alt="Hero selection preview" />
+                  <img className="character-choice-image" src={withBase("assets/selection/select-default.gif")} alt="Hero selection preview" />
                 </button>
                 <button className="choice-card character-choice-card is-locked" data-character="female-hulk" type="button" disabled>
-                  <img className="character-choice-image" src="assets/selection/select-female-hulk.gif" alt="Female Hulk selection preview" />
+                  <img className="character-choice-image" src={withBase("assets/selection/select-female-hulk.gif")} alt="Female Hulk selection preview" />
                   <span className="lock-badge">Locked</span>
                 </button>
               </div>
@@ -3802,7 +3803,7 @@ export default function App() {
             <p className="selection-subtitle" id="skill-selection-hint">0/2 equipped</p>
             <div className="selection-grid skill-selection-grid" id="skill-grid">
               <div className="choice-card skill-card" data-skill="breaker" role="button" tabIndex={0}>
-                <img className="skill-card-icon" src="assets/skill-icons/breaker.jpg" alt="Breaker icon" />
+                <img className="skill-card-icon" src={withBase("assets/skill-icons/breaker.jpg")} alt="Breaker icon" />
                 <div className="skill-card-info">
                   <strong>Breaker</strong>
                   <span>+15 Strength for 7s.</span>
@@ -3812,7 +3813,8 @@ export default function App() {
                 </div>
               </div>
               <div className="choice-card skill-card" data-skill="accelerate" role="button" tabIndex={0}>
-                <img className="skill-card-icon" src="assets/skill-icons/accelerate.jpg" alt="Accelerate icon" />
+                <img className="skill-card-icon" src={withBase("assets/skill-icons/accelerate.jpg")} alt="Accelerate icon" />
+
                 <div className="skill-card-info">
                   <strong>Accelerate</strong>
                   <span>+30 Agility for 7s.</span>
@@ -3822,7 +3824,8 @@ export default function App() {
                 </div>
               </div>
               <div className="choice-card skill-card" data-skill="impactBurst" role="button" tabIndex={0}>
-                <img className="skill-card-icon" src="assets/skill-icons/impact-burst.jpg" alt="Impact Burst icon" />
+                <img className="skill-card-icon" src={withBase("assets/skill-icons/impact-burst.jpg")} alt="Impact Burst icon" />
+
                 <div className="skill-card-info">
                   <strong>Impact Burst</strong>
                   <span>AOE burst: near +22%.</span>
@@ -3832,7 +3835,8 @@ export default function App() {
                 </div>
               </div>
               <div className="choice-card skill-card" data-skill="meteorPunch" role="button" tabIndex={0}>
-                <img className="skill-card-icon" src="assets/skill-icons/meteor-punch.jpg" alt="Meteor Punch icon" />
+                <img className="skill-card-icon" src={withBase("assets/skill-icons/meteor-punch.jpg")} alt="Meteor Punch icon" />
+
                 <div className="skill-card-info">
                   <strong>Meteor Punch</strong>
                   <span>Fly up and slam the roof.</span>
@@ -3857,7 +3861,8 @@ export default function App() {
             </div>
             <div className="character-selection-layout stage-selection-layout">
               <div className="character-preview-panel stage-selected-character">
-                <img id="stage-character-sprite" className="stage-character-sprite" src="assets/actions/default/default-idle-position.gif" alt="Hero idle preview" />
+                <img id="stage-character-sprite" className="stage-character-sprite" src={withBase("assets/actions/default/default-idle-position.gif")} alt="Hero idle preview" />
+
                 <div>
                   <p className="character-preview-kicker">Current Fighter</p>
                   <h3 id="stage-character-name" className="character-preview-name">Hero</h3>
@@ -3867,13 +3872,15 @@ export default function App() {
               <div className="selection-grid stage-grid stage-selection-grid" id="stage-grid">
                 <button className="choice-card is-selected" data-stage="car" type="button">
                   <div className="stage-preview stage-preview-image-wrap">
-                    <img className="stage-preview-image" src="assets/stages/stage-car-img.png" alt="Car stage preview" />
+                    <img className="stage-preview-image" src={withBase("assets/stages/stage-car-img.png")} alt="Car stage preview" />
+
                   </div>
                   <span>Car</span>
                 </button>
                 <button className="choice-card" data-stage="wooden-box" type="button">
                   <div className="stage-preview stage-preview-image-wrap">
-                    <img className="stage-preview-image" src="assets/stages/stage-woodbox-img.png" alt="Wooden box stage preview" />
+                    <img className="stage-preview-image" src={withBase("assets/stages/stage-woodbox-img.png")} alt="Wooden box stage preview" />
+
                   </div>
                   <span>Wooden Box</span>
                 </button>
@@ -3901,7 +3908,8 @@ export default function App() {
               <div className="impact-burst-wave" id="impact-burst-wave" aria-hidden="true"></div>
 
               <div className="fighter-wrap" id="fighter-wrap">
-                <img id="fighter-sprite" alt="Fighter sprite" />
+                <img id="fighter-sprite" alt="Fighter sprite" src="" />
+
               </div>
             </div>
 
