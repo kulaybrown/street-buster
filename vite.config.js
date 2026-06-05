@@ -51,5 +51,11 @@ export default defineConfig({
     },
   ],
   base: "/street-buster/",
+  // Ensure Vite generates asset URLs compatible with GitHub Pages subpath.
+  // (Without this, assets like /assets/... may 404, leaving a blank/white page.)
+  build: {
+    assetsDir: "assets",
+  },
 });
+
 
