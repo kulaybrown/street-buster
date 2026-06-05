@@ -1451,7 +1451,9 @@ h2 {
 }
 
 .game-area {
-  display: grid;
+  position: relative;
+  /* display: grid; */
+  gap: 14px;
   flex: 1;
   grid-template-rows: minmax(0, 1fr) auto;
   position: relative;
@@ -1501,7 +1503,7 @@ h2 {
 
 .arena {
   position: relative;
-  min-height: clamp(500px, 58vh, 660px);
+  min-height: clamp(320px, 40vh, 660px);
   /* border: 1px solid var(--border);
   border-radius: 28px;
   background:
@@ -1835,9 +1837,11 @@ h2 {
 
 .stage-car.broken,
 .stage-box.broken {
-  opacity: 0.38;
+  opacity: 1;
+  filter: saturate(0.55) brightness(0.68) contrast(1.11);
   transform: translateY(30px) rotate(10deg) scale(0.85);
 }
+
 
 .stage-box {
   width: 72%;
@@ -1975,7 +1979,7 @@ h2 {
   gap: 12px;
   pointer-events: auto;
   padding: 6px 2px 0;
-  bottom: 10px;
+  bottom: 20px;
   width: 100%;
 }
 
