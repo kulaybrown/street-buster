@@ -4,6 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
+
 async function copyDirRecursive(srcDir, destDir) {
   await fsp.mkdir(destDir, { recursive: true });
   const entries = await fsp.readdir(srcDir, { withFileTypes: true });
@@ -44,9 +45,11 @@ export default defineConfig({
           return;
         }
 
-        // Replace dist/assets with fresh copy.
-        await fsp.rm(outAssetsDir, { recursive: true, force: true });
+        // Merge-copy root assets into dist/assets.
+        // Do NOT delete dist/assets here, because Vite is also generating build outputs there.
+        // Copy logic will overwrite files with the same name to keep assets up-to-date.
         await copyDirRecursive(rootAssetsDir, outAssetsDir);
+
       },
     },
   ],
