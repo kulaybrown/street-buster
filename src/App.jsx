@@ -1,34 +1,45 @@
 import { useEffect, useRef } from "react";
 import * as PIXI from "pixi.js";
 
+const BASE_URL = import.meta.env.BASE_URL || "/";
+const withBase = (path) => {
+  const p = String(path || "");
+  if (!p) return "";
+  if (p.startsWith("http://") || p.startsWith("https://")) return p;
+  const normalizedPath = p.startsWith("/") ? p.slice(1) : p;
+  const base = BASE_URL.endsWith("/") ? BASE_URL.slice(0, -1) : BASE_URL;
+  return `${base}/${normalizedPath}`;
+};
+
 const SPRITES = {
   default: {
-    idle: "assets/actions/default/default-idle-position.gif",
-    celebPost: "assets/actions/default/celeb-post.gif",
-    meteorPunch: "assets/actions/default/meteor-punch.gif",
-    impactBurst: "assets/actions/default/impact-burst.gif",
-    punch: "assets/actions/default/default-punch-post.gif",
-    kick: "assets/actions/default/default-kick-post.gif",
-    jump: "assets/actions/default/default-jump-post.gif",
-    jumpPunch: "assets/actions/default/default-jump-punch-post.gif",
-    jumpKick: "assets/actions/default/default-jump-kick-post.gif",
-    crouch: "assets/actions/default/default-crouch.gif",
-    crouchPunch: "assets/actions/default/default-crouch-punch.gif",
-    crouchKick: "assets/actions/default/default-crouch-kick.gif",
+    idle: withBase("assets/actions/default/default-idle-position.gif"),
+    celebPost: withBase("assets/actions/default/celeb-post.gif"),
+    meteorPunch: withBase("assets/actions/default/meteor-punch.gif"),
+    impactBurst: withBase("assets/actions/default/impact-burst.gif"),
+    punch: withBase("assets/actions/default/default-punch-post.gif"),
+    kick: withBase("assets/actions/default/default-kick-post.gif"),
+    jump: withBase("assets/actions/default/default-jump-post.gif"),
+    jumpPunch: withBase("assets/actions/default/default-jump-punch-post.gif"),
+    jumpKick: withBase("assets/actions/default/default-jump-kick-post.gif"),
+    crouch: withBase("assets/actions/default/default-crouch.gif"),
+    crouchPunch: withBase("assets/actions/default/default-crouch-punch.gif"),
+    crouchKick: withBase("assets/actions/default/default-crouch-kick.gif"),
   },
   "female-hulk": {
-    idle: "assets/actions/female-hulk/female-hulk-idle-position.gif",
-    celebPost: "assets/actions/female-hulk/female-hulk-idle-position.gif",
-    punch: "assets/actions/female-hulk/female-hulk-punch-post.gif",
-    kick: "assets/actions/female-hulk/female-hulk-kick-post.gif",
-    jump: "assets/actions/female-hulk/female-hulk-jump-post.gif",
-    jumpPunch: "assets/actions/female-hulk/female-hulk-jump-punch-post.gif",
-    jumpKick: "assets/actions/female-hulk/female-hulk-jump-kick-post.gif",
-    crouch: "assets/actions/female-hulk/female-hulk-crouch.gif",
-    crouchPunch: "assets/actions/female-hulk/female-hulk-crouch-punch.gif",
-    crouchKick: "assets/actions/female-hulk/female-hulk-crouch-kick.gif",
+    idle: withBase("assets/actions/female-hulk/female-hulk-idle-position.gif"),
+    celebPost: withBase("assets/actions/female-hulk/female-hulk-idle-position.gif"),
+    punch: withBase("assets/actions/female-hulk/female-hulk-punch-post.gif"),
+    kick: withBase("assets/actions/female-hulk/female-hulk-kick-post.gif"),
+    jump: withBase("assets/actions/female-hulk/female-hulk-jump-post.gif"),
+    jumpPunch: withBase("assets/actions/female-hulk/female-hulk-jump-punch-post.gif"),
+    jumpKick: withBase("assets/actions/female-hulk/female-hulk-jump-kick-post.gif"),
+    crouch: withBase("assets/actions/female-hulk/female-hulk-crouch.gif"),
+    crouchPunch: withBase("assets/actions/female-hulk/female-hulk-crouch-punch.gif"),
+    crouchKick: withBase("assets/actions/female-hulk/female-hulk-crouch-kick.gif"),
   },
 };
+
 
 const CHARACTER_LABELS = {
   default: "Hero",
@@ -60,7 +71,7 @@ const SKILLS_BY_ID = {
     id: "meteorPunch",
     name: "Meteor Punch",
     icon: "MP",
-    iconSrc: "assets/skill-icons/meteor-punch.jpg",
+    iconSrc: withBase("assets/skill-icons/meteor-punch.jpg"),
     description: "Fly up and slam the roof in 1s with 20% AOE.",
     type: "active",
     durationMs: 0,
@@ -71,7 +82,7 @@ const SKILLS_BY_ID = {
     id: "breaker",
     name: "Breaker",
     icon: "BR",
-    iconSrc: "assets/skill-icons/breaker.jpg",
+    iconSrc: withBase("assets/skill-icons/breaker.jpg"),
     description: "Activate +15 Strength for 7s (15s cooldown).",
     type: "active",
     strengthBonus: 15,
@@ -83,7 +94,7 @@ const SKILLS_BY_ID = {
     id: "accelerate",
     name: "Accelerate",
     icon: "AC",
-    iconSrc: "assets/skill-icons/accelerate.jpg",
+    iconSrc: withBase("assets/skill-icons/accelerate.jpg"),
     description: "Activate +30 Agility for 7s (15s cooldown).",
     type: "active",
     agilityBonus: 30,
@@ -95,7 +106,7 @@ const SKILLS_BY_ID = {
     id: "impactBurst",
     name: "Impact Burst",
     icon: "IB",
-    iconSrc: "assets/skill-icons/impact-burst.jpg",
+    iconSrc: withBase("assets/skill-icons/impact-burst.jpg"),
     description: "AOE burst: near target +22%, otherwise +15%.",
     type: "active",
     cooldownMs: 10000,
@@ -103,6 +114,7 @@ const SKILLS_BY_ID = {
     unlockGold: 1000,
   },
 };
+
 
 const CHARACTER_SKILLS = {
   default: ["breaker", "accelerate", "impactBurst", "meteorPunch"],
@@ -199,8 +211,9 @@ function getCarVariantCode(carPartHealth) {
 
 function getCarVariantArt(carPartHealth) {
   const variantCode = getCarVariantCode(carPartHealth);
-  const directVariantUrl = `/assets/cars/${variantCode}.gif`;
-  const directFallbackUrl = "/assets/cars/111.gif";
+  const directVariantUrl = withBase(`/assets/cars/${variantCode}.gif`);
+  const directFallbackUrl = withBase("/assets/cars/111.gif");
+
 
   return {
     variantCode,
