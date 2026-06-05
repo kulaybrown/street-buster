@@ -315,7 +315,13 @@ export default function App() {
         exitOffsetX: 0,
         rotationDir: 1,
       },
+      postDestroyFilter: {
+        applied: false,
+        token: 0,
+        until: 0,
+      },
     };
+
 
     const listeners = [];
     const pressedArrows = new Set();
@@ -2284,9 +2290,12 @@ export default function App() {
 
         if (state.targetHealth <= 0) {
           state.targetBroken = true;
+          // Ensure post-destruction “lingering dark” effect runs.
+          applyPostDestroyLingeringDarkFilters();
           if (elements.targetObject) {
             elements.targetObject.classList.add("broken");
           }
+
           if (elements.stageBonusLabel) {
             elements.stageBonusLabel.textContent = "Broken";
           }
@@ -2536,8 +2545,53 @@ export default function App() {
       return nearestPart;
     }
 
+    function applyPostDestroyLingeringDarkFilters() {
+      if (!elements.targetObject) {
+        return;
+      }
+      const now = performance.now();
+      if (state.postDestroyFilter.applied && now <= state.postDestroyFilter.until) {
+        return;
+      }
+
+      state.postDestroyFilter.token += 1;
+      const token = state.postDestroyFilter.token;
+      state.postDestroyFilter.applied = true;
+      // Start immediately, linger briefly, then fade back.
+      state.postDestroyFilter.until = now + 950;
+
+      // Dark / ominous look.
+      elements.targetObject.style.filter = "brightness(0.55) contrast(1.25) saturate(0.8)";
+      elements.targetObject.style.opacity = "0.95";
+      elements.targetObject.style.transition = "filter 280ms ease, opacity 280ms ease";
+
+      // Add a short extra “afterimage” bump.
+      elements.targetObject.animate(
+        [
+          { filter: "brightness(0.55) contrast(1.25) saturate(0.8)" },
+          { filter: "brightness(0.42) contrast(1.35) saturate(0.7)" },
+          { filter: "brightness(0.55) contrast(1.25) saturate(0.8)" },
+        ],
+        { duration: 520, easing: "cubic-bezier(0.16, 0.74, 0.2, 1)" },
+      );
+
+      window.setTimeout(() => {
+        // Only revert if nothing newer has been applied.
+        if (!state.postDestroyFilter || state.postDestroyFilter.token !== token) {
+          return;
+        }
+        if (elements.targetObject) {
+          elements.targetObject.style.filter = "";
+          elements.targetObject.style.opacity = "";
+          elements.targetObject.style.transition = "";
+        }
+        state.postDestroyFilter.applied = false;
+      }, 980);
+    }
+
     function updateTargetVisual() {
       const ratio = state.targetMaxHealth === 0 ? 0 : state.targetHealth / state.targetMaxHealth;
+
       if (elements.targetHealthLabel) {
         elements.targetHealthLabel.textContent = `${Math.max(0, state.targetHealth)} / ${state.targetMaxHealth}`;
       }
@@ -2545,20 +2599,39 @@ export default function App() {
         elements.targetHealthBar.style.width = `${Math.max(0, ratio * 100)}%`;
       }
       if (elements.targetObject) {
+        // Keep target fully opaque; HP low should not make the target fade.
         elements.targetObject.style.transform = `scale(${0.92 + ratio * 0.12})`;
-        elements.targetObject.style.opacity = `${0.55 + ratio * 0.45}`;
+
+        // When completely destroyed, remove the darker/damaged visual state.
+        // This prevents lingering dark filters after the target is finished.
+        const isDestroyed = state.targetHealth <= 0;
+
+        // These "damage-*" classes are used for the car stage styling.
+        // Keep the filter tiers applied even when the target is completely destroyed.
+        elements.targetObject.classList.toggle("damage-1", ratio <= 0.85);
+        elements.targetObject.classList.toggle("damage-2", ratio <= 0.55);
+        elements.targetObject.classList.toggle("damage-3", ratio <= 0.25);
+
         if (state.stage === "car") {
           applyCarVariantToTarget(elements.targetObject, state.carPartHealth);
 
-          elements.targetObject.classList.toggle("damage-1", ratio <= 0.85);
-          elements.targetObject.classList.toggle("damage-2", ratio <= 0.55);
-          elements.targetObject.classList.toggle("damage-3", ratio <= 0.25);
           const leftDoorHealth = state.carPartHealth?.leftDoor ?? CAR_PARTS.leftDoor.maxHealth;
           const rightDoorHealth = state.carPartHealth?.rightDoor ?? CAR_PARTS.rightDoor.maxHealth;
           const roofHealth = state.carPartHealth?.roof ?? CAR_PARTS.roof.maxHealth;
-          elements.targetObject.classList.toggle("left-door-damaged", leftDoorHealth <= CAR_PARTS.leftDoor.maxHealth * 0.5);
-          elements.targetObject.classList.toggle("right-door-damaged", rightDoorHealth <= CAR_PARTS.rightDoor.maxHealth * 0.5);
-          elements.targetObject.classList.toggle("roof-damaged", roofHealth <= CAR_PARTS.roof.maxHealth * 0.5);
+
+          elements.targetObject.classList.toggle(
+            "left-door-damaged",
+            !isDestroyed && leftDoorHealth <= CAR_PARTS.leftDoor.maxHealth * 0.5,
+          );
+          elements.targetObject.classList.toggle(
+            "right-door-damaged",
+            !isDestroyed && rightDoorHealth <= CAR_PARTS.rightDoor.maxHealth * 0.5,
+          );
+          elements.targetObject.classList.toggle(
+            "roof-damaged",
+            !isDestroyed && roofHealth <= CAR_PARTS.roof.maxHealth * 0.5,
+          );
+
           elements.targetObject.classList.toggle("left-door-broken", leftDoorHealth <= 0);
           elements.targetObject.classList.toggle("right-door-broken", rightDoorHealth <= 0);
           elements.targetObject.classList.toggle("roof-broken", roofHealth <= 0);
